@@ -1,0 +1,31 @@
+# Use a docker container with Python 3.11 installed for sandboxing processes
+image: python:3.11-slim
+
+# Pipeline stages : only test here (no build/deploy needed)
+# start container -> install dependencies -> run tests -> done
+stages:
+  - test
+
+# Environment variables available to jobs
+variables:
+# store pip install cache so we don't have to redownload deps every run
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+# where job can find cache
+cache:
+  paths:
+    - .cache/pip/
+
+# commands run before every job
+before_script:
+  - pip install --upgrade pip
+  # install project dependencies
+  - pip install ".[dev]"
+
+# test job definition
+test:
+  stage: test # run in test stage
+  # run all tests in tests/
+  script:
+    - pytest tests/ -v --tb=short
+  allow_failure: false

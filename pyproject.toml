@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "reelpy"
+version = "0.1.0"
+description = "Composable, previewable Python video editing"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "av==17.0.1",
+    "opencv-python-headless>=4.13.0,<4.14",
+    "numpy==2.4.6",
+    "Pillow>=10,<12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["reelpy"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
