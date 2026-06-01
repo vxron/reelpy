@@ -30,7 +30,7 @@ class VideoReader():
         self.fps = float(self._stream.average_rate)
         self.width = int(self._stream.width)
         self.height = int(self._stream.height)
-        self.duration_s = float(self._container.duration * av.time_base) # in seconds: since the container's duration is in units of av.time_base, and av.time_base is 1/1000000 s
+        self.duration_s = float(self._container.duration / av.time_base) # in seconds: since the container's duration is in units of 1/av.time_base, and av.time_base is 1000000 s
         # NOTE: Duration from container is not always accurate for VBR files.
 
     def seek(self, t_sec: float) -> None:
