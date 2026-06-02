@@ -13,5 +13,5 @@ class InvalidVideoError(ReelpyError):
     pass
 
 class StreamNotFoundError(ReelpyError):
-    """Raised when no video stream exists in the file"""
+    """Raised when no video or audio stream exists in the file"""
     pass

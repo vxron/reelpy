@@ -6,6 +6,7 @@ Source files: reader.py
 import pytest
 import numpy as np
 from reelpy.io.reader import VideoReader
+from reelpy.io.writer import VideoWriter
 from reelpy.exceptions import InvalidVideoError
 
 SAMPLE_3S_320x240_30FPS = "tests/fixtures/Sample_320x240_30fps.mp4"
@@ -85,3 +86,5 @@ def test_reader_context_manager_closes():
     # after exiting, container should be closed meaning decoding should fail
     with pytest.raises(Exception):
         next(reader.frames())
+
+def test_writer_creates_valid_file
