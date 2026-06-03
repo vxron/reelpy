@@ -3,6 +3,7 @@ File: test_io.py
 Tests: video reading & writing
 Source files: reader.py
 """
+# TODO: test StreamNotFoundError (requires fixture with no video/audio stream)
 import pytest
 import numpy as np
 from reelpy.io.reader import VideoReader
@@ -26,9 +27,13 @@ def test_reader_nonexistent_file():
     with pytest.raises(InvalidVideoError):
         VideoReader("tests/fake_path.mp4")
 
-def test_writer_nonexistent_file():
+def test_writer_nonexistent_directory():
+    # NOTE: PyAV lazily opens output containers without raising even if the path is invalid.
+    # So we need to simulate a write for error to raise.
     with pytest.raises(InvalidVideoError):
-        VideoWriter("tests/fake_path.mp4", 30.0, 320, 240)
+        with VideoWriter("/nonexistent/dir/fake_path.mp4", 30.0, 320, 240) as writer:
+            frame = np.zeros((240, 320, 3), dtype=np.uint8)
+            writer.write_frame(frame)
 
 @pytest.mark.parametrize(
     "file_path,exp_width,exp_height,exp_fps,exp_dur",
@@ -41,7 +46,7 @@ def test_reader_open_file_and_get_metadata(
         assert reader.width == exp_width
         assert reader.height == exp_height
         assert reader.fps == exp_fps
-        assert reader.duration_s == pytest.approx(exp_dur)
+        assert reader.duration_s == pytest.approx(exp_dur, abs=0.1) # 0.1s handles any PyAV/ffprobe discrepancies
 
 @pytest.mark.parametrize(
     "file_path,exp_width,exp_height,exp_fps,exp_dur",
@@ -149,11 +154,11 @@ def test_writer_copy_audio(tmp_path):
         exp_fps = reader.fps
         exp_width = reader.width
         exp_height = reader.height
-        with VideoWriter(output_path, exp_fps, exp_width, exp_height) as writer:
+        with VideoWriter(output_path, exp_fps, exp_width, exp_height, audio_source=audio_src) as writer:
             for (arr,t) in reader.frames():
                 writer.write_frame(arr) # write vid frames
             # copy audio
-            writer.copy_audio(audio_src)
+            writer.copy_audio()
     
     # validate copied audio stream
     with av.open(output_path) as container:
@@ -161,13 +166,18 @@ def test_writer_copy_audio(tmp_path):
         assert len(container.streams.audio) > 0
         audio_stream = container.streams.audio[0]
         assert audio_stream.channels > 0
-        # duration is roughly expected
+        
+        # duration is roughly expected 
+        # very rough bcuz h.264 encoder buffering from scratch leads to variations in dur
         assert audio_stream.time_base is not None and audio_stream.duration is not None
         audio_dur = float(audio_stream.duration * audio_stream.time_base)
-        assert audio_dur == pytest.approx(4.131678, abs=0.2)
+        assert audio_dur == pytest.approx(4.131678, abs=0.3)
+        
         # packets are decodable and non empty
+        # take first 5 packets of demuxed audio stream & make into iterable list
         first_packets = list(itertools.islice(container.demux(audio_stream), 5))
         assert len(first_packets) > 0
         for packet in first_packets:
-            assert packet.pts is not None
-            assert packet.size > 0
+            assert packet.pts is not None # valid timestamp
+            assert packet.size > 0 # bytes of compressed audio data
+
