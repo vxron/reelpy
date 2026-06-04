@@ -86,7 +86,7 @@ class VideoWriter():
         # TODO: loop functionality 
         # if source_path is None (e.g., synthetic clip), return immediately
         if self._audio_stream is None:
-            raise StreamNotFoundError(f"VideoWriter copy_audio function could not find audio stream source")
+            return
 
         # reopen src audio so we can demux from it
         src = av.open(self._audio_source)
