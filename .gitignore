@@ -33,3 +33,4 @@ htmlcov/
 *.gif
 *.webp
 !tests/fixtures/*.mp4
+!tests/fixtures/*.mp3

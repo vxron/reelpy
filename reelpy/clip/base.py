@@ -102,10 +102,10 @@ class BaseClip(ABC):
 
     # START OTHER METHODS
 
-    def trim(self, start: float, end: float) -> Self:
+    def trim(self, start: float, end: float | None) -> Self:
         if start < 0:
             raise ValueError(f"start must be >= 0, got {start}")
-        if end <= start:
+        if end is not None and end <= start:
             raise ValueError(f"end must be > start, got end={end}, start={start}")
         result = self._copy()
         result.start = start
