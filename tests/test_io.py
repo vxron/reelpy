@@ -1,7 +1,7 @@
 """
 File: test_io.py
 Tests: video reading & writing
-Source files: reader.py
+Source files: reader.py, writer.py
 """
 # TODO: test StreamNotFoundError (requires fixture with no video/audio stream)
 import pytest
@@ -11,17 +11,10 @@ from reelpy.io.writer import VideoWriter
 from reelpy.exceptions import InvalidVideoError
 import av
 import itertools
-
-SAMPLE_3S_320x240_30FPS = "tests/fixtures/Sample_320x240_30fps.mp4"
-SAMPLE_NOISE = "tests/fixtures/Sample_Noise.mp4"
-SAMPLE_VERT_AUDIO = "tests/fixtures/Sample_Vertical_Audio.mp4"
-
-# Parameter order: file_path,exp_width,exp_height,exp_fps,exp_dur
-VIDEO_FIXTURES = [
-    (SAMPLE_3S_320x240_30FPS, 320, 240, 30.0, 3.0),
-    (SAMPLE_NOISE, 1920, 1080, 30.0, 5.333333), # and 160 vid frames
-    (SAMPLE_VERT_AUDIO, 1280, 720, 30.0, 4.131678)
-]
+from tests.conftest import (
+    VIDEO_FIXTURES, SAMPLE_3S_320x240_30FPS, SAMPLE_VERT_AUDIO, 
+    assert_frame_valid, assert_timestamps_valid
+)
 
 def test_reader_nonexistent_file():
     with pytest.raises(InvalidVideoError):
@@ -62,20 +55,14 @@ def test_reader_frames(
         all_frames = []
         for frame in reader.frames():
             arr, t = frame #unpacking
-            assert arr.shape == (exp_height, exp_width, 3)
-            assert arr.dtype == np.uint8
+            assert_frame_valid(arr, exp_width, exp_height)
             all_frames.append(frame)
         # codec schemes can sometimes drop last frame or two, but shouldn't hallucinate
         assert exp_frames-2 <= len(all_frames) <= exp_frames
 
     # Validate timestamps
     timestamps = [t for arr,t in all_frames]
-    # starts near 0
-    assert timestamps[0] == pytest.approx(0.0, abs=0.1) # allowed diff of 0.1s given finite fps
-    # increases monotonically 
-    assert all(timestamps[i+1] > timestamps[i] for i in range(0,len(timestamps)-1)) == True
-    # last frame near expected dur
-    assert timestamps[-1] == pytest.approx(exp_dur, abs=0.1)
+    assert_timestamps_valid(timestamps, exp_dur)
 
 @pytest.mark.parametrize(
     "file_path,exp_width,exp_height,exp_fps,exp_dur",
