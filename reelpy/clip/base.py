@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from typing import Self, Dict
 import numpy as np
+from reelpy.config import config
 
 # Abstract Base Class
 class BaseClip(ABC):
@@ -17,6 +18,10 @@ class BaseClip(ABC):
         self.end: float | None = None
         self.layers: list = []
         self.effects: list = []
+        # AUDIO
+        self.mute: bool = False
+        self.audio_source: str | None
+        self.has_audio: bool = False # overridden by Clip if audio present after reading file; synthetic clips don't have intrinsic audio
 
     @abstractmethod
     # abstract helper to copy object rather than just creating ptr to same obj
@@ -99,6 +104,48 @@ class BaseClip(ABC):
     def apply_preset(self, preset):
         # TODO once Preset class is made
         pass
+
+    # START AUDIO METHODS
+
+    def _resolve_audio_end(
+        self, 
+        audio_mode: str, 
+        effective_duration: float
+    ) -> float | None:
+        """
+        Resolves the audio end time based on the audio mode (globally set in configs).
+        - "trim": audio cut to match video duration
+        - "full": full audio source plays regardless of video length  
+        - "extend": not yet implemented
+        """
+        if audio_mode == "trim":
+            return effective_duration #vid dur
+        elif audio_mode == "full":
+            return None #audio runs full
+        elif audio_mode == "extend":
+            raise NotImplementedError(
+                "audio_mode='extend' not yet implemented — "
+                "use Timeline with stretch='freeze' for this behavior"
+            )
+        else:
+            raise ValueError(
+                f"Invalid audio_mode '{audio_mode}'. "
+                f"Must be 'trim', 'full', or 'extend'."
+            )
+        
+    def _resolve_audio_source(self) -> str | None:
+        """
+        Resolves the effective audio source for a clip for export.
+        Subclasses override _audio_source, _has_audio, and _mute attributes.
+        Priority: mute > explicit audio_source > file's own audio if has_audio > None
+        """
+        if self.mute:
+            return None
+        if self.audio_source is not None:
+            return self.audio_source
+        if self.has_audio: # video clips only, synthetic clips won't have this
+            return getattr(self, "path", None) # self.path only def for videoclips, default to None if synthetic
+        return None
 
     # START OTHER METHODS
 

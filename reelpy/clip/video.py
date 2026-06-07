@@ -3,6 +3,7 @@ File: video.py
 Class: Clip 
 Description: User-facing implementation of BaseClip that uses
 VideoReader & VideoWriter to edit a source clip from disk
+Use case: When the primary source should be a video file.
 """
 
 from __future__ import annotations
@@ -12,9 +13,10 @@ import numpy as np
 from reelpy.clip.base import BaseClip
 from reelpy.io.reader import VideoReader
 from reelpy.io.writer import VideoWriter
+from reelpy.config import config
 
 class Clip(BaseClip):
-    def __init__(self, path: str):
+    def __init__(self, path: str, audio_source: str | None = None, mute: bool = False):
         super().__init__() # parent class sets start, end, layers and effects
         self.path = path
         # open videoreader to read metadata
@@ -24,6 +26,8 @@ class Clip(BaseClip):
             self.width = reader.width
             self.duration = reader.duration_s
             self.has_audio = len(reader._container.streams.audio) > 0
+        self.audio_source = audio_source # overrides file's own audio if set
+        self.mute = mute
 
     def _copy(self, **overrides) -> Self:
         # new instance
@@ -34,6 +38,8 @@ class Clip(BaseClip):
         result.end = overrides.get("end", self.end)
         result.effects = overrides.get("effects", list(self.effects))
         result.layers = overrides.get("layers", list(self.layers))
+        result.mute = overrides.get("mute", self.mute)
+        result.audio_source = overrides.get("audio_source", self.audio_source)
         return result
     
     def frames(self) -> Iterator[tuple[np.ndarray, float]]:
@@ -55,12 +61,15 @@ class Clip(BaseClip):
         # TODO: implement PreviewPlayer
         pass
 
-    def export(self, path: str, bitrate: int = 4_000_000) -> None:
+    def export(self, path: str, bitrate: int = 4_000_000, audio_mode: str | None = None) -> None:
+        audio_mode = audio_mode or config.audio_mode # fall back to global config if mode not specifid in arg
+        resolved_audio = self._resolve_audio_source() # mute, override, clip's own audio, etc...
+        
         with VideoReader(self.path) as reader:
             with VideoWriter(
                 path=path, fps=self.fps, width=self.width, height=self.height, 
                 bitrate=bitrate, 
-                audio_source=self.path if self.has_audio else None # only attach audio if this clip has an audio stream
+                audio_source=resolved_audio # only attach audio if this clip has an audio stream
             ) as writer:
                 for (arr, t) in reader.frames(start=self.start, end=self.end):
                     canvas = arr
@@ -71,8 +80,16 @@ class Clip(BaseClip):
                     # for effect in self.effects:
                     #   canvas = effect.apply_frame(canvas, t)
                     writer.write_frame(canvas)
-                # add audio (if theres none, this is automatically handled in copy_audio which will return)
-                writer.copy_audio(start=self.start, end=self.end)
+                
+                # add audio 
+                if resolved_audio is not None:
+                    # if using file's own audio, pass trim bounds
+                    # if using external audio source, start from start=0, resolve end
+                    effective_end = self.end if self.end is not None else self.duration
+                    effective_duration = effective_end - self.start # vid dur
+                    audio_end = self._resolve_audio_end(audio_mode, effective_duration) # trim vs extend vs full
+                    audio_start = self.start if resolved_audio == self.path else 0.0
+                    writer.copy_audio(start=audio_start, end=audio_end)
 
     def metadata(self) -> Dict:
         return {
@@ -82,6 +99,9 @@ class Clip(BaseClip):
             "height": self.height,
             "start": self.start,
             "end": self.end,
+            "has_audio": self.has_audio,
+            "audio_source": self.audio_source,
+            "mute": self.mute,
             "layer_count": len(self.layers),
             "effect_count": len(self.effects)
         }

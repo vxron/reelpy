@@ -13,6 +13,7 @@ from typing import Dict
 import numpy as np
 from reelpy.clip.base import BaseClip
 from reelpy.io.writer import VideoWriter
+from reelpy.config import config
 
 class SyntheticClip(BaseClip):
     # Default is a 1080p 10s video at 30fps with black background
@@ -23,7 +24,8 @@ class SyntheticClip(BaseClip):
         fps: float = 30.0, 
         duration: float = 10.0, 
         background: tuple[int,int,int] = (0,0,0), 
-        audio_source: str | None = None
+        audio_source: str | None = None,
+        mute: bool = False,
     ):
         super().__init__() # parent class sets start, end, layers and effects
         # validate inputs
@@ -47,7 +49,8 @@ class SyntheticClip(BaseClip):
         self.fps = fps
         self.duration = duration
         self.background = background
-        self.audio_path = audio_source
+        self.audio_source = audio_source
+        self.mute = mute
 
     def _copy(self, **overrides) -> SyntheticClip:
         # create a copy of obj w/o touching original (non-destructive)
@@ -61,7 +64,8 @@ class SyntheticClip(BaseClip):
         result.end = overrides.get("end", self.end)
         result.layers = overrides.get("layers",list(self.layers)) # new obj (not same list ref)
         result.effects = overrides.get("effects",list(self.effects))
-        result.audio_path = overrides.get("audio_path", self.audio_path)
+        result.audio_source = overrides.get("audio_source", self.audio_source)
+        result.mute = overrides.get("mute", self.mute)
         return result
     
     def frames(self) -> Iterator[tuple[np.ndarray, float]]:
@@ -85,21 +89,29 @@ class SyntheticClip(BaseClip):
         # TODO: implement PreviewPlayer
         pass
     
-    def export(self, out_path: str, bitrate: int = 4_000_000) -> None:
+    def export(self, out_path: str, bitrate: int = 4_000_000, audio_mode: str | None = None) -> None:
+        audio_mode = audio_mode or config.audio_mode
+        resolved_audio = self._resolve_audio_source()
+        
         with VideoWriter(
-            out_path, fps=self.fps, width=self.width, height=self.height, bitrate=bitrate, audio_source=self.audio_path
+            out_path, fps=self.fps, width=self.width, height=self.height, bitrate=bitrate, audio_source=self.audio_source
         ) as writer:
             for (arr, t) in self.frames(): #internally generated frames
                 # todo: apply any effect chain 
                 writer.write_frame(arr)
+            
             # add audio if there is some
-            if self.audio_path is not None:
-                writer.copy_audio(end=self.duration) # copy audio for the duration of the clip
+            if resolved_audio is not None:
+                effective_end = self.end if self.end is not None else self.duration
+                effective_duration = effective_end - self.start
+                audio_end = self._resolve_audio_end(audio_mode, effective_duration)
+                writer.copy_audio(start=0.0, end=audio_end) # copy audio based on mode; start is always 0.0 i.e. beginning of ext audio source
 
     def metadata(self) -> Dict:
         return {
             "background": self.background,
-            "audio_source": self.audio_path,
+            "audio_source": self.audio_source,
+            "mute": self.mute,
             "duration": self.duration,
             "fps": self.fps,
             "width": self.width,
@@ -107,6 +119,6 @@ class SyntheticClip(BaseClip):
             "start": self.start,
             "end": self.end,
             "layer_count": len(self.layers),
-            "effect_count": len(self.effects)
+            "effect_count": len(self.effects),
     }
             

@@ -12,9 +12,11 @@ from reelpy.clip.base import BaseClip
 from reelpy.clip.synthetic import SyntheticClip
 from reelpy.clip.video import Clip
 from reelpy.exceptions import InvalidVideoError
+from reelpy.config import config
 from tests.conftest import (
-    VIDEO_FIXTURES, SAMPLE_3S_320x240_30FPS, SAMPLE_VERT_AUDIO,
-    assert_frame_valid, assert_timestamps_valid, INVALID_CLIP_CONFIGS, SYNTHETIC_FIXTURES
+    VIDEO_FIXTURES, SAMPLE_3S_320x240_30FPS, SAMPLE_VERT_AUDIO, AUDIO_FIXTURES,
+    assert_frame_valid, assert_timestamps_valid, INVALID_CLIP_CONFIGS, SYNTHETIC_FIXTURES,
+    make_clip
 )
 
 # --------------------------------------- CLIP TESTS ---------------------------------------------------------------
@@ -163,7 +165,7 @@ def test_synthetic_clip_default_init():
     assert syn.fps == 30.0
     assert syn.duration == 10.0
     assert syn.background == (0,0,0)
-    assert syn.audio_path is None
+    assert syn.audio_source is None
     assert syn.start == 0.0
     assert syn.end is None
     assert syn.layers == []
@@ -177,7 +179,7 @@ def test_synthetic_clip_init(width, height, fps, duration, background, audio_sou
     assert syn.fps == fps
     assert syn.duration == duration
     assert syn.background == background
-    assert syn.audio_path == audio_source
+    assert syn.audio_source == audio_source
     assert syn.start == (0.0 if start is None else start)
     assert syn.end == end
     assert syn.layers == []
@@ -243,7 +245,7 @@ def test_synthetic_clip_export(tmp_path, width, height, fps, duration, backgroun
             # audio duration is roughly expected 
             assert audio_stream.time_base is not None and audio_stream.duration is not None
             audio_dur = float(audio_stream.duration * audio_stream.time_base)
-            assert audio_dur == pytest.approx(effective_duration, abs=0.3)
+            assert audio_dur == pytest.approx(effective_duration, abs=0.3) # default behavior makes audio clip at video length ('trim' mode)
 
 @pytest.mark.parametrize("width, height, fps, duration, background, audio_source, start, end", SYNTHETIC_FIXTURES)
 def test_synthetic_clip_copy(width, height, fps, duration, background, audio_source, start, end):
@@ -259,7 +261,7 @@ def test_synthetic_clip_copy(width, height, fps, duration, background, audio_sou
     assert clip3.start == 1.0
     assert clip1.layers == clip2.layers == clip3.layers
     assert clip1.effects == clip2.effects == clip3.effects 
-    assert clip1.audio_path == clip2.audio_path == clip3.audio_path
+    assert clip1.audio_source == clip2.audio_source == clip3.audio_source
     assert clip1.background == clip2.background == clip3.background
 
 @pytest.mark.parametrize("width, height, fps, duration, background, audio_source, start, end", SYNTHETIC_FIXTURES)
@@ -278,4 +280,46 @@ def test_synthetic_clip_metadata(width, height, fps, duration, background, audio
     assert meta["end"] == end
     assert meta["layer_count"] == 0
     assert meta["effect_count"] == 0
-    
+
+# --------------------------------------- AUDIO TESTS (BOTH CLIP TYPES) ---------------------------------------------------------------
+
+@pytest.mark.parametrize("clip_type", ["clip", "synthetic"])
+@pytest.mark.parametrize("audio_source, audio_dur", AUDIO_FIXTURES)
+def test_clips_mute(tmp_path, clip_type, audio_source, audio_dur):
+    if audio_source is None and clip_type == "synthetic":
+        pytest.skip("no audio source to mute")
+    clip = make_clip(clip_type, audio_source=audio_source, mute=True)
+    output = str(tmp_path / "output.mp4")
+    clip.export(output)
+    with av.open(output) as container:
+        assert len(container.streams.audio) == 0 # no audio
+
+@pytest.mark.parametrize("clip_type", ["clip", "synthetic"])
+@pytest.mark.parametrize("audio_source, audio_dur", AUDIO_FIXTURES)
+@pytest.mark.parametrize("audio_mode, expect_trimmed_audio", [
+    ("trim", True),
+    ("full", False),
+    #("extend", False) TODO
+])
+def test_all_config_audio_modes(tmp_path, clip_type, audio_source, audio_dur, audio_mode, expect_trimmed_audio):
+    if audio_source is None and clip_type == "synthetic":
+        pytest.skip("this test case doesn't have audio: skipping audio tests")
+    clip = make_clip(clip_type, audio_source=audio_source)
+    output = str(tmp_path / "output.mp4")
+    clip.export(output, audio_mode=audio_mode)
+
+    with av.open(output) as container:
+        assert len(container.streams.audio) > 0
+        audio_stream = container.streams.audio[0]
+        assert audio_stream.duration is not None and audio_stream.time_base is not None
+        export_audio_dur = float(audio_stream.duration * audio_stream.time_base)
+        
+        uses_own_audio = (audio_source is None and clip_type == "clip")
+        if expect_trimmed_audio or uses_own_audio: 
+            assert container.streams.video[0] is not None and container.streams.video[0].duration is not None and container.streams.video[0].time_base is not None
+            # audio should match video duration, not full source OR audio is video (audio_source == None)
+            video_dur = float(container.streams.video[0].duration * container.streams.video[0].time_base)
+            assert export_audio_dur == pytest.approx(video_dur, abs=0.3)
+        else:
+            # audio should be the full audio source duration, completely external to clip
+            assert export_audio_dur == pytest.approx(audio_dur, abs=0.3)
