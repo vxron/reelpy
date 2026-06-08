@@ -14,6 +14,7 @@ from reelpy.clip.base import BaseClip
 from reelpy.io.reader import VideoReader
 from reelpy.io.writer import VideoWriter
 from reelpy.config import config
+from reelpy.effects.fades import FadeOutEffect
 
 class Clip(BaseClip):
     def __init__(self, path: str, audio_source: str | None = None, mute: bool = False):
@@ -43,18 +44,19 @@ class Clip(BaseClip):
         return result
     
     def frames(self) -> Iterator[tuple[np.ndarray, float]]:
+        eff_dur = self.effective_duration()
         with VideoReader(self.path) as reader:
             # iterate thru frames from start to end
             for (arr, t) in reader.frames(start=self.start, end=self.end):
                 # apply layer compositing stack
                 for layer in self.layers:
-                    # TODO: layer.render(canvas, t)
+                    # TODO: layer.render(arr, t)
                     pass
                 # pass frames thru effect pipe
                 for effect in self.effects:
-                    # TODO: apply by implementing effects apply_frame(arr,t) func
-                    pass
-
+                    if isinstance(effect, FadeOutEffect):
+                        effect.clip_duration = eff_dur
+                    arr = effect.apply_frame(arr, t)
                 yield (arr, t)
 
     def preview(self) -> None:
@@ -65,31 +67,19 @@ class Clip(BaseClip):
         audio_mode = audio_mode or config.audio_mode # fall back to global config if mode not specifid in arg
         resolved_audio = self._resolve_audio_source() # mute, override, clip's own audio, etc...
         
-        with VideoReader(self.path) as reader:
-            with VideoWriter(
-                path=path, fps=self.fps, width=self.width, height=self.height, 
-                bitrate=bitrate, 
-                audio_source=resolved_audio # only attach audio if this clip has an audio stream
-            ) as writer:
-                for (arr, t) in reader.frames(start=self.start, end=self.end):
-                    canvas = arr
-                    # (1) apply layer stack
-                    # for layer in self.layers:
-                    #   canvas = layer.render(canvas, t)
-                    # (2) apply effect chain
-                    # for effect in self.effects:
-                    #   canvas = effect.apply_frame(canvas, t)
-                    writer.write_frame(canvas)
-                
-                # add audio 
-                if resolved_audio is not None:
-                    # if using file's own audio, pass trim bounds
-                    # if using external audio source, start from start=0, resolve end
-                    effective_end = self.end if self.end is not None else self.duration
-                    effective_duration = effective_end - self.start # vid dur
-                    audio_end = self._resolve_audio_end(audio_mode, effective_duration) # trim vs extend vs full
-                    audio_start = self.start if resolved_audio == self.path else 0.0
-                    writer.copy_audio(start=audio_start, end=audio_end)
+        with VideoWriter(
+            path=path, fps=self.fps, width=self.width, height=self.height, 
+            bitrate=bitrate, 
+            audio_source=resolved_audio # only attach audio if this clip has an audio stream
+        ) as writer:
+            for (arr, t) in self.frames(): # effects & layers applied inside frames
+                writer.write_frame(arr)
+            if resolved_audio is not None: # add audio 
+                # if using file's own audio, pass trim bounds
+                # if using external audio source, start from start=0, resolve end
+                audio_end = self._resolve_audio_end(audio_mode, self.effective_duration()) # trim vs extend vs full
+                audio_start = self.start if resolved_audio == self.path else 0.0
+                writer.copy_audio(start=audio_start, end=audio_end)
 
     def metadata(self) -> Dict:
         return {
