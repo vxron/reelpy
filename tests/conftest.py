@@ -7,6 +7,8 @@ import numpy as np
 from reelpy.config import config
 from reelpy.clip.synthetic import SyntheticClip
 from reelpy.clip.video import Clip
+from reelpy.effects.base import BaseEffect
+from reelpy.effects.fades import FadeInEffect, FadeOutEffect
 
 # Automatically reset global configs to defaults after every test 
 @pytest.fixture(autouse=True)
@@ -16,7 +18,7 @@ def reset_config():
     config.default_bitrate = 4_000_000
     config.default_fps = 30.0
 
-# ── Video Fixtures ────────────────────────────────────────────────────────
+# ── Ready-To-Go Fixtures ────────────────────────────────────────────────────────
 
 SAMPLE_3S_320x240_30FPS = "tests/fixtures/Sample_320x240_30fps.mp4"
 SAMPLE_NOISE = "tests/fixtures/Sample_Noise.mp4"
@@ -31,7 +33,7 @@ VIDEO_FIXTURES = [
 ]
 
 SYNTHETIC_FIXTURES = [
-    # (width, height, fps, duration, background, audio_source)
+    # (width, height, fps, duration, background, audio_source, start, end)
     (320, 240, 30.0, 3.0, (255, 255, 255), None, None, None),          # no audio, custom white bg
     (1920, 1080, 30.0, 10.0, (0, 0, 0), None, None, None),             # DEFAULT: 1080p, 10s, 30fps
     (1280, 720, 24.0, 2.0, (100, 150, 200), None, None, None),         # 720p, custom bg, 24fps
@@ -46,6 +48,46 @@ AUDIO_FIXTURES = [
     (SAMPLE_VERT_AUDIO, 4.131678), # path, audio dur based on ffprobe
     (SAMPLE_MP3, 5.041633),
 ]
+
+# Fixture for testing effects on individual frames 
+colored_rgb = np.zeros((240, 320, 3), dtype=np.uint8)
+colored_rgb[:,:,0] = 200 # R channel
+colored_rgb[:,:,1] = 100 # G
+colored_rgb[:,:,2] = 50  # B
+TEST_FRAMES = {
+    "black_rgb":   np.zeros((240, 320, 3), dtype=np.uint8),
+    "white_rgb":   np.full((240, 320, 3), 255, dtype=np.uint8),
+    "grey_rgb":    np.full((240, 320, 3), 128, dtype=np.uint8),
+    "colored_rgb": colored_rgb,
+    "black_rgba":  np.zeros((240, 320, 4), dtype=np.uint8),
+    "white_rgba":  np.full((240, 320, 4), 255, dtype=np.uint8),
+    "semi_rgba":   np.full((240, 320, 4), 128, dtype=np.uint8),
+}
+
+# ── Fixture Factories ────────────────────────────────────────────────────────
+    
+def make_synthetic_from_fixture(width, height, fps, duration, background=(0,0,0), audio_source=None, start=None, end=None, **kwargs):
+    """Build a SyntheticClip from a SYNTHETIC_FIXTURES entry."""
+    clip = SyntheticClip(width, height, fps, duration, background, audio_source, kwargs.get("mute", False))
+    if start is not None and end is not None:
+        clip = clip.trim(start, end)
+    return clip
+
+def make_video_from_fixture(file_path, *args, **kwargs):
+    """Build a Clip from a VIDEO_FIXTURES entry. Extra positional args (width,neight,etc) are ignored. Keyword args go to kwargs"""
+    return Clip(file_path, kwargs.get("audio_source", None), kwargs.get("mute", False))
+
+SYNTHETIC_CLIP_FACTORY = [
+    (lambda f=fixture: make_synthetic_from_fixture(*f), f"synthetic_{i}")
+    for i, fixture in enumerate(SYNTHETIC_FIXTURES)
+]
+
+VIDEO_CLIP_FACTORY = [ # builds series of Clip instances from make_video_from_fixture
+    (lambda f=fixture: make_video_from_fixture(*f), f"video_{i}") # f=fixture so each individual lambda builder gets a diff fixture value (don't share last instance)
+    for i, fixture in enumerate(VIDEO_FIXTURES)
+]
+
+ALL_CLIP_FACTORY = SYNTHETIC_CLIP_FACTORY + VIDEO_CLIP_FACTORY # elements are (clip: BaseClip, clip_ID: str)
 
 # ── Test configs ────────────────────────────────────────────────────────
 
@@ -66,13 +108,6 @@ INVALID_CLIP_CONFIGS = [
 ]
 
 # ── Helper functions ────────────────────────────────────────────────────────
-
-# Factory for creating test clips of either type with matching config
-def make_clip(clip_type: str, audio_source: str | None = None, mute: bool = False):
-    if clip_type == "clip":
-        return Clip(SAMPLE_VERT_AUDIO, audio_source=audio_source, mute=mute)
-    else: 
-        return SyntheticClip(320, 240, 30.0, 2.0, audio_source=audio_source, mute=mute)
 
 def assert_frame_valid(arr, width, height):
     assert arr.shape == (height, width, 3)

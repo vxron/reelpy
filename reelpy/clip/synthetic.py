@@ -14,6 +14,7 @@ import numpy as np
 from reelpy.clip.base import BaseClip
 from reelpy.io.writer import VideoWriter
 from reelpy.config import config
+from reelpy.effects.fades import FadeOutEffect
 
 class SyntheticClip(BaseClip):
     # Default is a 1080p 10s video at 30fps with black background
@@ -71,6 +72,7 @@ class SyntheticClip(BaseClip):
     def frames(self) -> Iterator[tuple[np.ndarray, float]]:
         # Generates frames from scratch rather than decoding them from source
         effective_end = self.end if self.end is not None else self.duration
+        eff_dur = self.effective_duration()
         # total frames needed
         total_frames = round((effective_end - self.start) * self.fps)
         for i in range(total_frames):
@@ -78,11 +80,16 @@ class SyntheticClip(BaseClip):
             canvas = np.full((self.height,self.width,3), self.background, dtype=np.uint8) # fill canvas w background color
             # compute timestamp rel to start
             t = i/self.fps
+            
             # TODO: apply layer stack & effect chain
-             # for layer in self.layers:
+            # for layer in self.layers:
              #     canvas = layer.render(canvas, t)
-             # for effect in self.effects:
-             #     canvas = effect.apply_frame(canvas, t)
+            for effect in self.effects:
+                # inject clip duration into any fadeout effects
+                if isinstance(effect, FadeOutEffect):
+                    effect.clip_duration = eff_dur
+                
+                canvas = effect.apply_frame(canvas, t)
             yield (canvas, t)
 
     def preview(self) -> None:
@@ -94,17 +101,13 @@ class SyntheticClip(BaseClip):
         resolved_audio = self._resolve_audio_source()
         
         with VideoWriter(
-            out_path, fps=self.fps, width=self.width, height=self.height, bitrate=bitrate, audio_source=self.audio_source
+            out_path, fps=self.fps, width=self.width, height=self.height, bitrate=bitrate, audio_source=resolved_audio
         ) as writer:
-            for (arr, t) in self.frames(): #internally generated frames
-                # todo: apply any effect chain 
+            for (arr, t) in self.frames(): # internally generated frames w pre-built layers/effects
                 writer.write_frame(arr)
-            
             # add audio if there is some
             if resolved_audio is not None:
-                effective_end = self.end if self.end is not None else self.duration
-                effective_duration = effective_end - self.start
-                audio_end = self._resolve_audio_end(audio_mode, effective_duration)
+                audio_end = self._resolve_audio_end(audio_mode, self.effective_duration())
                 writer.copy_audio(start=0.0, end=audio_end) # copy audio based on mode; start is always 0.0 i.e. beginning of ext audio source
 
     def metadata(self) -> Dict:

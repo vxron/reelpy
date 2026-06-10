@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from typing import Self, Dict
 import numpy as np
 from reelpy.config import config
+from reelpy.effects.base import BaseEffect
 
 # Abstract Base Class
 class BaseClip(ABC):
@@ -17,11 +18,12 @@ class BaseClip(ABC):
         self.start: float = 0.0
         self.end: float | None = None
         self.layers: list = []
-        self.effects: list = []
+        self.effects: list[BaseEffect] = []
         # AUDIO
         self.mute: bool = False
-        self.audio_source: str | None
+        self.audio_source: str | None = None
         self.has_audio: bool = False # overridden by Clip if audio present after reading file; synthetic clips don't have intrinsic audio
+        self.duration: float = 0.0 # overridden
 
     @abstractmethod
     # abstract helper to copy object rather than just creating ptr to same obj
@@ -158,6 +160,11 @@ class BaseClip(ABC):
         result.start = start
         result.end = end
         return result
+    
+    def effective_duration(self) -> float:
+        effective_end = self.end if self.end is not None else self.duration
+        effective_duration = effective_end - self.start
+        return effective_duration
     
     @abstractmethod
     def frames(self) -> Iterator[tuple[np.ndarray, float]]:

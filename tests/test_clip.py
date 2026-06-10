@@ -1,7 +1,7 @@
 """
 File: test_clip.py
 Tests: BaseClip, Clip, SyntheticClip
-Source files: base.py, synthetic.py, video.py
+Source files: clip/
 """
 import pytest
 import numpy as np
@@ -16,7 +16,7 @@ from reelpy.config import config
 from tests.conftest import (
     VIDEO_FIXTURES, SAMPLE_3S_320x240_30FPS, SAMPLE_VERT_AUDIO, AUDIO_FIXTURES,
     assert_frame_valid, assert_timestamps_valid, INVALID_CLIP_CONFIGS, SYNTHETIC_FIXTURES,
-    make_clip
+    make_synthetic_from_fixture, make_video_from_fixture
 )
 
 # --------------------------------------- CLIP TESTS ---------------------------------------------------------------
@@ -288,7 +288,12 @@ def test_synthetic_clip_metadata(width, height, fps, duration, background, audio
 def test_clips_mute(tmp_path, clip_type, audio_source, audio_dur):
     if audio_source is None and clip_type == "synthetic":
         pytest.skip("no audio source to mute")
-    clip = make_clip(clip_type, audio_source=audio_source, mute=True)
+    
+    if clip_type == "synthetic":
+        clip = make_synthetic_from_fixture(320, 240, 30.0, 2.0, audio_source=audio_source, mute=True)
+    elif clip_type == "clip":
+        clip = make_video_from_fixture(SAMPLE_VERT_AUDIO, audio_source=audio_source, mute=True)
+    
     output = str(tmp_path / "output.mp4")
     clip.export(output)
     with av.open(output) as container:
@@ -304,7 +309,10 @@ def test_clips_mute(tmp_path, clip_type, audio_source, audio_dur):
 def test_all_config_audio_modes(tmp_path, clip_type, audio_source, audio_dur, audio_mode, expect_trimmed_audio):
     if audio_source is None and clip_type == "synthetic":
         pytest.skip("this test case doesn't have audio: skipping audio tests")
-    clip = make_clip(clip_type, audio_source=audio_source)
+    if clip_type == "synthetic":
+        clip = make_synthetic_from_fixture(320, 240, 30.0, 2.0, audio_source=audio_source)
+    elif clip_type == "clip":
+        clip = make_video_from_fixture(SAMPLE_VERT_AUDIO, audio_source=audio_source)
     output = str(tmp_path / "output.mp4")
     clip.export(output, audio_mode=audio_mode)
 
