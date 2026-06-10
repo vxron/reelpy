@@ -16,7 +16,7 @@ class FadeInEffect(BaseEffect):
 
     def apply_frame(self, frame: np.ndarray, t: float) -> np.ndarray:
         # early stop if fade is already complete
-        if t >= self.duration:
+        if t > self.duration:
             return frame
         
         # check shape of frame (RGB for global effects and RGBA for per-layer effects)
@@ -44,8 +44,8 @@ class FadeOutEffect(BaseEffect):
 
     def apply_frame(self, frame: np.ndarray, t: float) -> np.ndarray:
         t_fade_start = self.clip_duration - self.duration
-        # early stop if fade is not yet happening or already complete
-        if t < t_fade_start or t >= t_fade_start + self.duration:
+        # early stop if fade is not yet happening or already complete, past last frame
+        if t < t_fade_start or t > t_fade_start + self.duration:
             return frame
         
         # check shape of frame (RGB for global effects and RGBA for per-layer effects)
