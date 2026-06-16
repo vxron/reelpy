@@ -10,6 +10,45 @@ from reelpy.clip.video import Clip
 from reelpy.effects.base import BaseEffect
 from reelpy.effects.fades import FadeInEffect, FadeOutEffect
 
+
+# ── CLI Arg Parsing ────────────────────────────────────────────────────────
+def pytest_addoption(parser):
+    """Add custom CLI flags to pytest."""
+    parser.addoption(
+        "--routine",
+        action="store_true", # store as true if this arg is present in CLI
+        default=False,
+        help="only run tests marked as routine"
+    )
+    parser.addoption(
+        "--exhaustive",
+        action="store_true",
+        default=False,
+        help="run ALL tests including slow high-res ones"
+    )
+
+def pytest_collection_modifyitems(config, items):
+    """
+    Control which tests run based on the CLI flags.
+    Default (no flags): run everything
+    --routine: run only @pytest.mark.routine tests
+    --exhaustive: run everything including slow tests
+    """
+    routine_only = config.getoption("--routine")
+    exhaustive = config.getoption("--exhaustive")
+
+    if exhaustive: # exhaustive overrides everything: run all w/o filtering
+        return
+    
+    if routine_only:
+        # skip anything not marked as routine
+        skip = pytest.mark.skip(reason="not marked as routine")
+        for item in items: # iterate thru tests 
+            if "routine" not in item.keywords:
+                item.add_marker(skip)
+
+
+# ── Configs ────────────────────────────────────────────────────────
 # Automatically reset global configs to defaults after every test 
 @pytest.fixture(autouse=True)
 def reset_config():
@@ -17,6 +56,7 @@ def reset_config():
     config.audio_mode = "trim"
     config.default_bitrate = 4_000_000
     config.default_fps = 30.0
+
 
 # ── Ready-To-Go Fixtures ────────────────────────────────────────────────────────
 
@@ -27,20 +67,20 @@ SAMPLE_MP3 = "tests/fixtures/Sample_Audio_440hz.mp3"
 
 # Parameter order: file_path,exp_width,exp_height,exp_fps,exp_dur
 VIDEO_FIXTURES = [
-    (SAMPLE_3S_320x240_30FPS, 320, 240, 30.0, 3.0),
-    (SAMPLE_NOISE, 1920, 1080, 30.0, 5.333333), # and 160 vid frames
-    (SAMPLE_VERT_AUDIO, 1280, 720, 30.0, 4.131678)
+    pytest.param(SAMPLE_3S_320x240_30FPS, 320, 240, 30.0, 3.0, marks=pytest.mark.routine),
+    pytest.param(SAMPLE_NOISE, 1920, 1080, 30.0, 5.333333, marks=pytest.mark.exhaustive), # and 160 vid frames
+    pytest.param(SAMPLE_VERT_AUDIO, 1280, 720, 30.0, 4.131678, marks=pytest.mark.routine)
 ]
 
 SYNTHETIC_FIXTURES = [
-    # (width, height, fps, duration, background, audio_source, start, end)
-    (320, 240, 30.0, 3.0, (255, 255, 255), None, None, None),          # no audio, custom white bg
-    (1920, 1080, 30.0, 10.0, (0, 0, 0), None, None, None),             # DEFAULT: 1080p, 10s, 30fps
-    (1280, 720, 24.0, 2.0, (100, 150, 200), None, None, None),         # 720p, custom bg, 24fps
-    (320, 240, 30.0, 3.0, (0, 0, 0), SAMPLE_VERT_AUDIO, None, None),   # with video audio source
-    (320, 240, 30.0, 3.0, (0, 0, 0), SAMPLE_MP3, None, None),          # mp3 audio source
-    (320, 240, 30.0, 3.0, (0, 0, 0), SAMPLE_VERT_AUDIO, 0.5, 2.0),     # trimmed
-    (1920, 1080, 30.0, 10.0, (0, 0, 0), None, 1.0, 2.0),               # DEFAULT trimmed
+    # (width, height, fps, duration, background, audio_source, start, end, test_level)
+    pytest.param(320, 240, 30.0, 3.0, (255, 255, 255), None, None, None, marks=pytest.mark.routine),          # no audio, custom white bg
+    pytest.param(1920, 1080, 30.0, 10.0, (0, 0, 0), None, None, None, marks=pytest.mark.exhaustive),          # DEFAULT: 1080p, 10s, 30fps
+    pytest.param(1280, 720, 24.0, 2.0, (100, 150, 200), None, None, None, marks=pytest.mark.exhaustive),      # 720p, custom bg, 24fps
+    pytest.param(320, 240, 30.0, 3.0, (56, 47, 8), SAMPLE_VERT_AUDIO, None, None, marks=pytest.mark.routine), # with video audio source
+    pytest.param(320, 240, 30.0, 3.0, (0, 0, 0), SAMPLE_MP3, None, None, marks=pytest.mark.routine),          # mp3 audio source
+    pytest.param(320, 240, 30.0, 3.0, (0, 0, 0), SAMPLE_VERT_AUDIO, 0.5, 2.0, marks=pytest.mark.routine),     # trimmed
+    pytest.param(1920, 1080, 30.0, 10.0, (0, 0, 0), None, 1.0, 2.0, marks=pytest.mark.exhaustive),            # DEFAULT trimmed
 ]
 
 AUDIO_FIXTURES = [
@@ -78,12 +118,12 @@ def make_video_from_fixture(file_path, *args, **kwargs):
     return Clip(file_path, kwargs.get("audio_source", None), kwargs.get("mute", False))
 
 SYNTHETIC_CLIP_FACTORY = [
-    (lambda f=fixture: make_synthetic_from_fixture(*f), f"synthetic_{i}")
+    (lambda f=fixture: make_synthetic_from_fixture(*f.values), f"synthetic_{i}") # pytest.param stors its args in.values as a tuple!
     for i, fixture in enumerate(SYNTHETIC_FIXTURES)
 ]
 
 VIDEO_CLIP_FACTORY = [ # builds series of Clip instances from make_video_from_fixture
-    (lambda f=fixture: make_video_from_fixture(*f), f"video_{i}") # f=fixture so each individual lambda builder gets a diff fixture value (don't share last instance)
+    (lambda f=fixture: make_video_from_fixture(*f.values), f"video_{i}") # f=fixture so each individual lambda builder gets a diff fixture value (don't share last instance)
     for i, fixture in enumerate(VIDEO_FIXTURES)
 ]
 

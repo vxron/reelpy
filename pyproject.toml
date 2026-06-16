@@ -28,4 +28,8 @@ packages = ["reelpy"]
 line-length = 100
 
 [tool.pytest.ini_options]
+markers = [
+    "routine: fast tests suitable for every push, run by default",
+    "exhaustive: slow tests (high-res, long clips), run manually or in nightly CI",
+]
 testpaths = ["tests"]
