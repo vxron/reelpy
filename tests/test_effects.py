@@ -14,6 +14,7 @@ from reelpy.io.reader import VideoReader
 from reelpy.effects.base import BaseEffect
 from reelpy.effects.fades import FadeInEffect, FadeOutEffect
 from reelpy.effects.color import ColorGradeEffect
+from reelpy.effects.transform import ResizeEffect
 import numpy as np
 from typing import Callable
 from tests.conftest import (
@@ -23,10 +24,14 @@ from tests.conftest import (
 # ── Expectation Functions ────────────────────────────────────────────────────────────────
 
 def expect_valid_shape_dtype_range(inp, out, effect, t):
-    assert out.shape == inp.shape
+    effect_type = type(effect)
     assert out.dtype == np.uint8
     assert out.min() >= 0
     assert out.max() <= 255
+    if effect_type in [ResizeEffect]:
+        return
+    assert out.shape == inp.shape
+    
 
 def assert_fadein_rgb_correct(inp, out, effect, t):
     """Verify pixel transformations for RGB fadein."""
@@ -85,7 +90,7 @@ def assert_fadeout_alpha_correct(inp, out, effect, t):
         expected_alpha = (inp[:,:,3].astype(np.float32) * alpha_factor).astype(np.uint8)
         assert np.allclose(out[:,:,3], expected_alpha, atol=1)
 
-def assert_first_darker_than_last(frames, **kwargs):
+def assert_first_darker_than_last(frames, frames_before=None, **kwargs):
     """FADEIN BEHAVIOR: First frame should be darker than last.
        frames is from reader.frames()"""
     start_idx = 0; end_idx = -1
@@ -103,7 +108,7 @@ def assert_first_darker_than_last(frames, **kwargs):
     assert first < last, \
         f"Expected earlier frame to be darker than later for FadeIn: first_mean={first:.1f}, first_idx={start_idx}, last_mean={last:.1f}, last_idx={end_idx}"
     
-def assert_last_darker_than_first(frames, **kwargs):
+def assert_last_darker_than_first(frames, frames_before=None, **kwargs):
     """FADEOUT BEHAVIOR: Last frame should be darker than first."""
     start_idx = 0; end_idx = -1
     # iterate until we get frames that arent nearly black
@@ -120,7 +125,7 @@ def assert_last_darker_than_first(frames, **kwargs):
     assert last < first, \
         f"Expected later frame to be darker than earlier for FadeOut: first_mean={first:.1f}, first_idx={start_idx}, last_mean={last:.1f}, last_idx={end_idx}"
     
-def assert_middle_brighter_than_ends(frames, **kwargs):
+def assert_middle_brighter_than_ends(frames, frames_before=None, **kwargs):
     """FADEIN AND FADEOUT CHAIN: Middle frame brighter than first & last."""
     start_idx = 0; end_idx = -1
     mid_idx = len(frames)//2
@@ -212,11 +217,52 @@ def assert_output_darker_than_input(frames_after, frames_before, **kwargs):
     assert after_mean < before_mean, \
         f"Expected darker output: before={before_mean:.1f}, after={after_mean:.1f}"
 
-def assert_output_greyscale(frames, **kwargs):
+def assert_output_greyscale(frames, frames_before=None, **kwargs):
     """saturation=0 should produce R==G==B on every frame."""
     for arr, t in frames:
         assert np.allclose(arr[:,:,0], arr[:,:,1], atol=2), "R != G after saturation=0"
         assert np.allclose(arr[:,:,1], arr[:,:,2], atol=2), "G != B after saturation=0"
+
+def assert_resize_output_shape(inp, out, effect, t):
+    """Output shape should match expected target dimensions."""
+    h, w = inp.shape[:2]
+    channels = inp.shape[2]
+
+    if effect.scale_mode:
+        expected_w = round(w * effect.scale)
+        expected_h = round(h * effect.scale)
+    elif effect.width is not None and effect.height is not None:
+        expected_w = effect.width
+        expected_h = effect.height 
+    elif effect.width is not None:
+        expected_w = effect.width
+        expected_h = round(h * (effect.width / w))
+    elif effect.height is not None:
+        expected_h = effect.height
+        expected_w = round(w * (effect.height / h))
+    
+    assert out.shape == (expected_h, expected_w, channels), \
+        f"ResizeEffect output shape wrong: expected ({expected_h},{expected_w},{channels}), got {out.shape}"
+    
+def assert_output_scale_size(frames_after, frames_before, **kwargs):
+    """Output frames should be half the dimensions of input frames."""
+    scale = kwargs.get("scale")
+    h_before, w_before = frames_before[0][0].shape[:2]
+    h_after,  w_after  = frames_after[0][0].shape[:2]
+    assert w_after == round(w_before * scale), \
+        f"Expected width {round(w_before*scale)}, got {w_after}"
+    assert h_after == round(h_before * scale), \
+        f"Expected height {round(h_before*scale)}, got {h_after}"
+
+def assert_output_specific_size(frames_after, frames_before, **kwargs):
+    """Output frames should match target absolute dimensions."""
+    target_w = kwargs.get("target_w")
+    target_h = kwargs.get("target_h")
+    h_after, w_after = frames_after[0][0].shape[:2]
+    if target_w is not None:
+        assert w_after == target_w, f"Expected width {target_w}, got {w_after}"
+    if target_h is not None:
+        assert h_after == target_h, f"Expected height {target_h}, got {h_after}"
 
 
 # ── Expectations per Effect ────────────────────────────────────────────────────────────────
@@ -235,6 +281,8 @@ EFFECT_EXPECTATIONS: dict[tuple[type[BaseEffect], str], list[Callable]] = {
     (FadeOutEffect, "rgba"): [assert_fadeout_alpha_correct],
     (ColorGradeEffect, "rgb"): [assert_colorgrade_rgb_correct],
     (ColorGradeEffect, "rgba"): [assert_colorgrade_rgb_correct, assert_colorgrade_alpha_preserved],
+    (ResizeEffect, "rgb"): [assert_resize_output_shape],
+    (ResizeEffect, "rgba"): [assert_resize_output_shape],
 }
 
 # FOR INTEGRATION LEVEL
@@ -253,7 +301,7 @@ INTEGRATION_EFFECT_EXPECTATIONS = [
     (
         lambda dur: [FadeInEffect(min(0.5, dur * 0.2)), FadeOutEffect(min(0.5, dur * 0.2))],
         [assert_middle_brighter_than_ends],
-        "FadeIn_FadeOut_Composite"
+        "FadeIn_FadeOut"
     ),
     (
         lambda dur: [ColorGradeEffect(brightness=0.3, saturation=1.4, hue=40)],
@@ -269,6 +317,21 @@ INTEGRATION_EFFECT_EXPECTATIONS = [
         lambda dur: [ColorGradeEffect(saturation=0.0, contrast=0.8), FadeOutEffect(min(0.5, dur * 0.15))],
         [assert_last_darker_than_first, assert_output_greyscale],
         "ColorGrade_FadeOut"
+    ),
+    (
+        lambda dur: [ResizeEffect(width=160, height=120)],
+        [assert_output_specific_size],
+        "Resize_Absolute"
+    ),
+    (
+        lambda dur: [FadeInEffect(min(0.5, dur * 0.2)), ResizeEffect(scale=0.5)],
+        [assert_first_darker_than_last, assert_output_scale_size],
+        "FadeIn_Resize"
+    ),
+    (
+        lambda dur: [ResizeEffect(scale=2), FadeOutEffect(min(0.5, dur * 0.2))],
+        [assert_last_darker_than_first, assert_output_scale_size],
+        "Resize_FadeOut"
     ),
 ]
 
@@ -365,6 +428,13 @@ EFFECT_TEST_CASES = [
 
     # ── ColorGrade tests ──────────────────────────────────────────────────────────
     *COLORGRADE_TEST_CASES, # * is for unpacking list :,)
+
+    # ── Resize tests ──────────────────────────────────────────────────────────
+    (ResizeEffect(width=60, height=80), 0.1, "white_rgb", "rgb"),   # abs resize
+    (ResizeEffect(scale=0.7),           0.2, "white_rgba", "rgba"), # scale down
+    (ResizeEffect(scale=2),             0.3, "colored_rgb", "rgb"), # scale up
+    (ResizeEffect(width=160),           0.4, "semi_rgba", "rgba"),  # width only
+    (ResizeEffect(height=400),          0.5, "grey_rgb", "rgb"),    # height only
 ]
 
 # ──  Effect Instances ────────────────────────────────────────────────────────────────
@@ -426,7 +496,7 @@ def test_clone_independence(effect: BaseEffect):
     checked = False
     for attr in vars(effect):
         original_val = getattr(effect,attr)
-        if isinstance(original_val, float):
+        if isinstance(original_val, (float, int)):
             setattr(clone, attr, original_val + 1.0)
             assert getattr(effect, attr) == original_val, \
                 f"Modifying clone.{attr} affected original"
@@ -445,8 +515,14 @@ def test_effect_clip(tmp_path, clip_lambda, clip_label, effect_chain, assertions
     dur = raw_clip.effective_duration() # clip's eff duration
     effects = effect_chain(dur)
     clip = raw_clip
+    target_w = target_h = scale = None
     for effect in effects: # apply all effects to the raw clip in a chain, overriding each time
         clip = clip.apply(effect)
+        if type(effect) in [ResizeEffect]:
+            # save target_w and target_h for later assertions if applicable
+            target_w = vars(effect).get("width", None)
+            target_h = vars(effect).get("height", None)
+            scale = vars(effect).get("scale", None)
 
     output = str(tmp_path / f"output_{clip_label}_{effect_chain_label}.mp4")
     clip.export(output)
@@ -464,10 +540,14 @@ def test_effect_clip(tmp_path, clip_lambda, clip_label, effect_chain, assertions
     for assertion in assertions:
         # handle special cases
         if assertion == assert_output_brighter_than_input and any(isinstance(effect, FadeInEffect) for effect in effects) :
-            assertion(frames_after, frames_before=frames_before, fadein_flag=True)
+            assertion(frames_after, frames_before, fadein_flag=True)
         elif assertion == assert_output_brighter_than_input and any(isinstance(effect, FadeOutEffect) for effect in effects) :
-            assertion(frames_after, frames_before=frames_before, fadeout_flag=True)
+            assertion(frames_after, frames_before, fadeout_flag=True)
+        elif assertion == assert_output_specific_size:
+            assertion(frames_after, frames_before, target_w=target_w, target_h=target_h)
+        elif assertion == assert_output_scale_size:
+            assertion(frames_after, frames_before, scale=scale)
         # functions that only need frames_after ignore frames_before via **kwargs
         else:
-            assertion(frames_after, frames_before=frames_before)
+            assertion(frames_after, frames_before)
 

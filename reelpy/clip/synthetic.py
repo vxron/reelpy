@@ -99,9 +99,12 @@ class SyntheticClip(BaseClip):
     def export(self, out_path: str, bitrate: int = 4_000_000, audio_mode: str | None = None) -> None:
         audio_mode = audio_mode or config.audio_mode
         resolved_audio = self._resolve_audio_source()
+        frames_gen = self.frames()
+        first_arr, first_t = next(frames_gen)
+        out_h, out_w = first_arr.shape[:2]
         
         with VideoWriter(
-            out_path, fps=self.fps, width=self.width, height=self.height, bitrate=bitrate, audio_source=resolved_audio
+            out_path, fps=self.fps, width=out_w, height=out_h, bitrate=bitrate, audio_source=resolved_audio
         ) as writer:
             for (arr, t) in self.frames(): # internally generated frames w pre-built layers/effects
                 writer.write_frame(arr)
