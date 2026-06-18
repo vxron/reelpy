@@ -66,13 +66,17 @@ class Clip(BaseClip):
     def export(self, path: str, bitrate: int = 4_000_000, audio_mode: str | None = None) -> None:
         audio_mode = audio_mode or config.audio_mode # fall back to global config if mode not specifid in arg
         resolved_audio = self._resolve_audio_source() # mute, override, clip's own audio, etc...
-        
+        frames_gen = self.frames() # in case there were any size transformations, we need to know before export
+        first_arr, first_t = next(frames_gen)
+        out_h, out_w = first_arr.shape[:2]
+
         with VideoWriter(
-            path=path, fps=self.fps, width=self.width, height=self.height, 
+            path=path, fps=self.fps, width=out_w, height=out_h, 
             bitrate=bitrate, 
             audio_source=resolved_audio # only attach audio if this clip has an audio stream
         ) as writer:
-            for (arr, t) in self.frames(): # effects & layers applied inside frames
+            writer.write_frame(first_arr)
+            for (arr, t) in frames_gen: # effects & layers applied inside frames
                 writer.write_frame(arr)
             if resolved_audio is not None: # add audio 
                 # if using file's own audio, pass trim bounds
