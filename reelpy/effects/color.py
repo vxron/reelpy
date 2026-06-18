@@ -23,7 +23,7 @@ class ColorGradeEffect(BaseEffect):
         self.hue = hue
         self.temperature = temperature 
     
-    def apply_frame(self, frame, t):
+    def _apply_rgb_frame(self, frame, t):
         # split alpha is present, work on RGB only
         if frame.shape[2] == 4:
             has_alpha = True
