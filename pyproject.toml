@@ -31,5 +31,6 @@ line-length = 100
 markers = [
     "routine: fast tests suitable for every push, run by default",
     "exhaustive: slow tests (high-res, long clips), run manually or in nightly CI",
+    "local: memory-heavy tests, never run in CI",
 ]
 testpaths = ["tests"]

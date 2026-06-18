@@ -26,6 +26,12 @@ def pytest_addoption(parser):
         default=False,
         help="run ALL tests including slow high-res ones"
     )
+    parser.addoption(
+        "--local",
+        action="store_true",
+        default=False,
+        help="run ALL tests including memory-heavy ones only suited for local machines, NOT CI"
+    )
 
 def pytest_collection_modifyitems(config, items):
     """
@@ -36,10 +42,18 @@ def pytest_collection_modifyitems(config, items):
     """
     routine_only = config.getoption("--routine")
     exhaustive = config.getoption("--exhaustive")
+    local = config.getoption("--local")
 
-    if exhaustive: # exhaustive overrides everything: run all w/o filtering
+    # always skip local-only tests unless --local flag is passed
+    if not local: 
+        skip_local = pytest.mark.skip(reason="too memory-heavy for CI runners, run locally only")
+        for item in items:
+            if "local" in item.keywords:
+                item.add_marker(skip_local) # skip local on CI 
+
+    if exhaustive: # run all w/o filtering (except obv can't run local on CI)
         return
-    
+
     if routine_only:
         # skip anything not marked as routine
         skip = pytest.mark.skip(reason="not marked as routine")

@@ -328,10 +328,11 @@ INTEGRATION_EFFECT_EXPECTATIONS = [
         [assert_first_darker_than_last, assert_output_scale_size],
         "FadeIn_Resize"
     ),
-    (
+    pytest.param(
         lambda dur: [ResizeEffect(scale=2), FadeOutEffect(min(0.5, dur * 0.2))],
         [assert_last_darker_than_first, assert_output_scale_size],
-        "Resize_FadeOut"
+        "Resize_FadeOut",
+        marks=pytest.mark.local 
     ),
 ]
 
