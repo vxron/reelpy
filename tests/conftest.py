@@ -118,6 +118,26 @@ TEST_FRAMES = {
     "semi_rgba":   np.full((240, 320, 4), 128, dtype=np.uint8),
 }
 
+LAYER_SHAPE_FIXTURES = [ # tuples with (shape_label, constructor kwargs dict)
+    ("circle_filled", {"shape": "circle", "position": (50, 50), "radius": 20, "size": None, "points": None, "color": (200,100,50), "thickness": -1}),
+    ("circle_stroked", {"shape": "circle", "position": (50, 50), "radius": 20, "size": None, "points": None, "color": (200,100,50), "thickness": 2}),
+    ("rectangle_filled", {"shape": "rectangle", "position": (10, 10), "size": (30, 20), "radius": None, "points": None, "color": (50,200,100), "thickness": -1}),
+    ("rectangle_stroked", {"shape": "rectangle", "position": (10, 10), "size": (30, 20), "radius": None, "points": None, "color": (50,200,100), "thickness": 2}),
+    ("line", {"shape": "line", "position": (10, 10), "size": (80, 80), "radius": None, "points": None, "color": (0,0,200), "thickness": 3}),
+    ("polygon_filled", {"shape": "polygon", "position": None, "size": None, "radius": None, "points": [(20,20),(60,20),(40,60)], "color": (200,200,0), "thickness": -1}),
+    ("polygon_stroked", {"shape": "polygon", "position": None, "size": None, "radius": None, "points": [(20,20),(60,20),(40,60)], "color": (200,200,0), "thickness": 2})
+]
+
+LAYER_SOLID_FIXTURES = [ # tuples with (solid_label, constructor kwargs dict)
+    ("solid_fullcanvas", {"color": (255,0,0), "rect": None}),
+    ("solid_rect", {"color": (0,255,0), "rect": (10, 10, 30, 20)})
+]
+
+BLANK_CANVASES = {
+    "blank_rgba_small": np.zeros((100, 100, 4), dtype=np.uint8),
+    "blank_rgba_large": np.zeros((240, 320, 4), dtype=np.uint8),
+}
+
 # ── Fixture Factories ────────────────────────────────────────────────────────
     
 def make_synthetic_from_fixture(width, height, fps, duration, background=(0,0,0), audio_source=None, start=None, end=None, **kwargs):
