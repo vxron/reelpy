@@ -10,10 +10,10 @@ Classes: ColorGradeEffect (brightness, contrast, saturation, hue, temperature)
 """
 
 import numpy as np
-from reelpy.effects.base import BaseEffect
+from reelpy.effects.base import BaseEffect, RGBEffect
 import cv2
 
-class ColorGradeEffect(BaseEffect):
+class ColorGradeEffect(RGBEffect):
     def __init__(self, brightness=1.0, contrast=1.0, saturation=1.0, hue=0.0, temperature=0.0):
         if brightness < 0 or contrast < 0 or saturation < 0:
             raise ValueError(f"Invalid negative input, brightness={brightness}, contrast={contrast}, sat={saturation}")
@@ -23,7 +23,7 @@ class ColorGradeEffect(BaseEffect):
         self.hue = hue
         self.temperature = temperature 
     
-    def _apply_rgb_frame(self, frame, t):
+    def _process_rgb(self, frame, t):
         # split alpha is present, work on RGB only
         if frame.shape[2] == 4:
             has_alpha = True
