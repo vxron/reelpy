@@ -81,14 +81,13 @@ class SyntheticClip(BaseClip):
             # compute timestamp rel to start
             t = i/self.fps
             
-            # TODO: apply layer stack & effect chain
-            # for layer in self.layers:
-             #     canvas = layer.render(canvas, t)
+            # apply layer stack & effect chain
+            for layer in self.layers:
+                canvas = layer.render(canvas, t)
             for effect in self.effects:
                 # inject clip duration into any fadeout effects
                 if isinstance(effect, FadeOutEffect):
                     effect.clip_duration = eff_dur
-                
                 canvas = effect.apply_frame(canvas, t)
             yield (canvas, t)
 

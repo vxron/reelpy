@@ -50,8 +50,7 @@ class Clip(BaseClip):
             for (arr, t) in reader.frames(start=self.start, end=self.end):
                 # apply layer compositing stack
                 for layer in self.layers:
-                    # TODO: layer.render(arr, t)
-                    pass
+                    arr = layer.render(arr, t)
                 # pass frames thru effect pipe
                 for effect in self.effects:
                     if isinstance(effect, FadeOutEffect):

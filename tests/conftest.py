@@ -3,13 +3,16 @@ File: conftest.py
 Description: fixtures, constants, helper functions, made automatically available to all test files
 """
 import pytest 
+import random
+import math
 import numpy as np
 from reelpy.config import config
 from reelpy.clip.synthetic import SyntheticClip
 from reelpy.clip.video import Clip
 from reelpy.effects.base import BaseEffect
 from reelpy.effects.fades import FadeInEffect, FadeOutEffect
-
+from reelpy.layers.shapes import SolidLayer, ShapeLayer
+from reelpy.layers.text import TextLayer
 
 # ── CLI Arg Parsing ────────────────────────────────────────────────────────
 def pytest_addoption(parser):
@@ -103,6 +106,16 @@ AUDIO_FIXTURES = [
     (SAMPLE_MP3, 5.041633),
 ]
 
+FONT_FIXTURES = [
+    "tests/fixtures/fonts/DejaVuSans.ttf",
+    "tests/fixtures/fonts/DejaVuSerif.ttf",
+    "tests/fixtures/fonts/LiberationSerif-Regular.ttf",
+    "tests/fixtures/fonts/LiberationSerif-Italic.ttf",
+    "tests/fixtures/fonts/LiberationSerif-Bold.ttf",
+    "tests/fixtures/fonts/LiberationSerif-BoldItalic.ttf",
+    "tests/fixtures/fonts/LiberationSans-Regular.ttf",
+]
+
 # Fixture for testing effects on individual frames 
 colored_rgb = np.zeros((240, 320, 3), dtype=np.uint8)
 colored_rgb[:,:,0] = 200 # R channel
@@ -135,7 +148,7 @@ LAYER_SOLID_FIXTURES = [ # tuples with (solid_label, constructor kwargs dict)
 
 BLANK_CANVASES = {
     "blank_rgba_small": np.zeros((100, 100, 4), dtype=np.uint8),
-    "blank_rgba_large": np.zeros((240, 320, 4), dtype=np.uint8),
+    "blank_rgba_medium": np.zeros((240, 320, 4), dtype=np.uint8),
 }
 
 # ── Fixture Factories ────────────────────────────────────────────────────────
@@ -162,6 +175,129 @@ VIDEO_CLIP_FACTORY = [ # builds series of Clip instances from make_video_from_fi
 ]
 
 ALL_CLIP_FACTORY = SYNTHETIC_CLIP_FACTORY + VIDEO_CLIP_FACTORY # elements are (clip: BaseClip, clip_ID: str)
+
+def make_random_solid_layer(seed, width, height):
+    params_dict = {}
+    rng = random.Random(seed)
+    color = (int(rng.uniform(0, 255)), int(rng.uniform(0, 255)), int(rng.uniform(0, 255)))
+    # pick size first, then bound position
+    w = int(rng.uniform(5, width // 3))
+    h = int(rng.uniform(5, height // 3))
+    random_x = int(rng.uniform(0, width - w))
+    random_y = int(rng.uniform(0, height - h))
+    rect = (random_x, random_y, w, h)
+    solid_layer = SolidLayer(
+        color = color,
+        rect  = rect,
+    )
+    params_dict["color"] = color
+    params_dict["rect"] = rect
+    return solid_layer, params_dict
+
+def make_random_shape_layer(seed, width, height, shape: str | None = None):
+    rng = random.Random(seed)
+    if shape is None:
+        # need to randomly choose shape
+        shape = rng.choice(["circle", "rectangle", "line", "polygon"])
+    
+    params_dict = {}
+
+    if shape == "circle":
+        # center must be at least radius away from every edge
+        # pick radius first
+        radius = rng.randint(5, min(width, height) // 4)
+        # then bound center pos
+        x = rng.randint(radius, width - radius)
+        y = rng.randint(radius, height - radius)
+        shape_layer = ShapeLayer(
+            shape = "circle",
+            position = (x,y),
+            size = None,
+            radius = radius,
+            points = None,
+        )
+    elif shape == "rectangle":
+        # pick size first (min 10, max 1/3 dim of canvas)
+        w = rng.randint(10, width // 3) 
+        h = rng.randint(10, height // 3)
+        size = (w,h)
+        # pick position according to size 
+        x = rng.randint(0, width-w)
+        y = rng.randint(0, height-h)
+        shape_layer = ShapeLayer(
+            shape = "rectangle",
+            position = (x,y),
+            size = size,
+            radius = None,
+            points = None,
+        )
+
+    elif shape == "line":
+        x1, y1 = rng.randint(0, width-1), rng.randint(0, height-1)
+        x2, y2 = rng.randint(0, width-1), rng.randint(0, height-1)
+        shape_layer = ShapeLayer(
+            shape = "line",
+            position = (x1,y1),
+            size = (x2,y2),
+            radius = None,
+            points = None,
+        )
+
+    elif shape == "polygon":
+        n_points = rng.randint(3, 6) # triangle to hexagon range
+        poly_radius = rng.randint(15, 40)
+        margin = poly_radius + 5  # small buffer
+        cx, cy = rng.randint(margin, width-margin), rng.randint(margin, height-margin) # center of an invisible circle that the polygon will be inscribed in
+        # generate points within canvas bounds, around the circle at random angles to guarantee convex (non self-intersecting) shape
+        angles = sorted(rng.uniform(0, 2*math.pi) for _ in range(n_points))
+        points = [
+            (int(cx + poly_radius * math.cos(a)), int(cy + poly_radius * math.sin(a)))
+            for a in angles
+        ]
+        shape_layer = ShapeLayer(
+            shape = "polygon",
+            position = None,
+            size = None,
+            radius = None,
+            points = points,
+        )
+
+    params_dict = vars(shape_layer)
+    return shape_layer, params_dict
+
+def make_random_text_layer(seed, width, height):
+    rng = random.Random(seed)
+    font_path = rng.choice(FONT_FIXTURES + [None]) # none = default font if no path provided
+    text = rng.choice(["Test", "hello! this is a longer message!", "Reelpy<3", "43"]) # make sure min length of msg is 2 here to avoid dividebyzero error
+    msg_length = len(text)
+    color = (rng.randint(0, 255), rng.randint(0, 255), rng.randint(0, 255))
+    anchor = rng.choice(["la", "mm", "ls"])
+
+    # font size bounded relative to canvas + text length
+    max_font_size = max(15, (min(width, height) // max(msg_length // 2, 1)) )
+    font_size = rng.randint(10, max_font_size)
+
+    # margin computed deterministically: how much space could this text occupy,
+    # regardless of which anchor is used (anchor could place text in any direction
+    # relative to position, so margin must cover the worst case on every side)
+    text_extent_w = font_size * msg_length
+    text_extent_h = font_size * 2
+    margin_w = min(text_extent_w, width // 2 - 1)   # never exceed half the canvas
+    margin_h = min(text_extent_h, height // 2 - 1)
+    # randomize position WITHIN the safe remaining area
+    x = rng.randint(margin_w, width - margin_w)
+    y = rng.randint(margin_h, height - margin_h)
+    
+    text_layer = TextLayer(
+        text = text,
+        position = (x,y),
+        font_path = font_path,
+        font_size = font_size,
+        color = color,
+        anchor = anchor,
+    )
+    params_dict = vars(text_layer)
+    return text_layer, params_dict
 
 # ── Test configs ────────────────────────────────────────────────────────
 
