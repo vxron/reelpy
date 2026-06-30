@@ -265,7 +265,7 @@ def make_random_shape_layer(seed, width, height, shape: str | None = None):
     params_dict = vars(shape_layer)
     return shape_layer, params_dict
 
-def make_random_text_layer(seed, width, height):
+def make_random_text_layer(seed, width, height, **overrides):
     rng = random.Random(seed)
     font_path = rng.choice(FONT_FIXTURES + [None]) # none = default font if no path provided
     text = rng.choice(["Test", "hello! this is a longer message!", "Reelpy<3", "43"]) # make sure min length of msg is 2 here to avoid dividebyzero error
@@ -273,9 +273,14 @@ def make_random_text_layer(seed, width, height):
     color = (rng.randint(0, 255), rng.randint(0, 255), rng.randint(0, 255))
     anchor = rng.choice(["la", "mm", "ls"])
 
-    # font size bounded relative to canvas + text length
-    max_font_size = max(15, (min(width, height) // max(msg_length // 2, 1)) )
-    font_size = rng.randint(10, max_font_size)
+    # font size bounded relative to canvas + text length + max width if specified in overrides
+    font_size = overrides.get("font_size")
+    if font_size is None:
+        max_font_size = max(15, (min(width, height) // max(msg_length // 2, 1)) )
+        font_size = rng.randint(10, max_font_size)
+        if overrides.get("max_width") is not None:
+            # keep font_size reasonable relative to max_width so it's not just one word per line
+            font_size = min(font_size, overrides["max_width"] // 4)
 
     # margin computed deterministically: how much space could this text occupy,
     # regardless of which anchor is used (anchor could place text in any direction
@@ -289,12 +294,14 @@ def make_random_text_layer(seed, width, height):
     y = rng.randint(margin_h, height - margin_h)
     
     text_layer = TextLayer(
-        text = text,
+        text = overrides.get("text", text),
         position = (x,y),
-        font_path = font_path,
+        font_path = overrides.get("font_path", font_path),
         font_size = font_size,
         color = color,
         anchor = anchor,
+        max_width = overrides.get("max_width", None),
+        line_spacing = overrides.get("line_spacing", 4)
     )
     params_dict = vars(text_layer)
     return text_layer, params_dict

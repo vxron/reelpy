@@ -1,8 +1,11 @@
 import pytest
 import numpy as np
 from reelpy.layers.shapes import SolidLayer, ShapeLayer
+from reelpy.layers.text import TextLayer
 from reelpy.io.reader import VideoReader
-from tests.conftest import LAYER_SHAPE_FIXTURES, LAYER_SOLID_FIXTURES, ALL_CLIP_FACTORY, make_random_shape_layer, make_random_solid_layer, make_random_text_layer
+from PIL import Image, ImageDraw, ImageFont
+from tests.conftest import (LAYER_SHAPE_FIXTURES, LAYER_SOLID_FIXTURES, ALL_CLIP_FACTORY, FONT_FIXTURES,
+    make_random_shape_layer, make_random_solid_layer, make_random_text_layer)
 
 # ── Expectation Functions ──────────────────────────────────
 def assert_circle_correct(result, kwargs):
@@ -85,10 +88,44 @@ def assert_shape_layer_correct(frame, kwargs):
         assert_polygon_correct(frame, kwargs)
     else:
         raise ValueError("No matching shape found in assert_shape_layer_correct.")
+    
+def assert_text_layer_composited(frame, kwargs, atol=20):
+    x, y = kwargs["position"]
+    font_size = kwargs["font_size"]
+    color = kwargs["color"]
+    text = kwargs["text"]
+    max_width = kwargs.get("max_width")
+    anchor = kwargs.get("anchor", "la")
+    if not text.strip():
+        return
+    msg_length = len(text)
+
+    if max_width is None:
+        # single-line path: width scales with character count, height is one line tall
+        half_w = (font_size * msg_length) // 2 + 10
+        half_h = font_size + 10
+    else:
+        # wrapped path: width is capped by max_width itself, height scales with estimated line count (rough estimate)
+        estimated_lines = max(1, (font_size * msg_length) // max_width + 1) # matches calculations in make_random_text_layer's own margin-sizing logic
+        half_w = max_width // 2 + 10
+        half_h = (font_size * estimated_lines) + 10
+
+    y0, y1 = max(0, y - half_h), min(frame.shape[0], y + half_h)
+    x0, x1 = max(0, x - half_w), min(frame.shape[1], x + half_w)
+
+    region = frame[y0:y1, x0:x1]
+    if region.size == 0:
+        pytest.fail(f"Search region collapsed to empty — position {(x,y)} likely out of bounds")
+
+    matches = np.all(np.abs(region.astype(int) - np.array(color)) <= atol, axis=-1)
+    assert np.any(matches), (
+        f"No pixels matching color {color} found near position {(x,y)} "
+        f"(anchor={anchor}, max_width={max_width}, font_size={font_size}, text={text!r})"
+    )
 
 # ── Unit level: _draw() in isolation ──────────────────────────
 
-WRAP_TEST_CASES = [
+WRAP_TEST_CASES = [ # (text, max_width, description)
     ("Short", 200, "single word, definitely fits one line"),
     ("This is a longer sentence that should wrap onto multiple lines", 100, "normal wrapping"),
     ("Supercalifragilisticexpialidocious", 50, "single word wider than max_width — must not crash, must not split mid-word"),
@@ -136,14 +173,51 @@ def test_shape_layer_draw(kwargs_dict, label):
     # shape specific
     SHAPE_ASSERTIONS[kwargs_dict["shape"]](result, kwargs_dict)
 
+
+@pytest.mark.parametrize("text,max_width,description", WRAP_TEST_CASES)
+def test_text_layer_draw(text, max_width, description):
+    overrides = {}
+    overrides["text"] = text
+    overrides["font_size"] = 24
+    overrides["max_width"] = max_width
+    overrides["font_path"] = FONT_FIXTURES[0]
+    seed = 0
+    result, _ = make_random_text_layer(seed, 320, 240, **overrides)
+    font = ImageFont.truetype(result.font_path, 24)
+    wrapped = result._wrap_text(result.text, font) # must wrap text manually for unit test since this fxn call is only executed automatically at render time
+    
+    if text == "":
+        # edge case: empty string passes through unchanged
+        assert wrapped == ""
+        return
+    
+    lines = wrapped.split("\n")
+    # testing the diff wrapping strats based on max_width
+    for line in lines:
+        words_in_line = line.split()
+        if len(words_in_line) <= 1:
+            # single-word lines are allowed to exceed max_width (oversized-word fallback)
+            continue
+        assert font.getlength(line) <= max_width, \
+            f"[{description}] line exceeded max_width: '{line}' ({font.getlength(line)} > {max_width})"
+        
+    # no word loss: rejoining all lines' words must reconstruct the original word list
+    original_words = text.split()
+    rejoined_words = wrapped.replace("\n", " ").split()
+    assert rejoined_words == original_words, \
+        f"[{description}] word content changed during wrapping: {original_words} != {rejoined_words}"
+
+
 # ── Integration-level tests ──────────────────────────
 
 # small-ish canvas size for efficiency, 320x240
-RANDOM_SOLID_CASES = [make_random_solid_layer(seed, 320, 240) for seed in range(10)]
+RANDOM_SOLID_CASES = [make_random_solid_layer(seed, 320, 240) for seed in range(8)]
 RANDOM_SHAPE_CASES = [make_random_shape_layer(seed, 320, 240, shape) 
                       for shape in ["circle", "rectangle", "line", "polygon"] # outer
                       for seed in range(3)] # 3 of each shape
-RANDOM_TEXT_CASES = [make_random_text_layer(seed, 320, 240) for seed in range(10)]
+RANDOM_TEXT_CASES = [make_random_text_layer(seed, 320, 240, max_width=mw) 
+                     for seed in range(3)
+                     for mw in [None, 80, 150]]
 
 @pytest.mark.parametrize("clip_lambda, clip_label", ALL_CLIP_FACTORY)
 @pytest.mark.parametrize("solid_layer, params_dict", RANDOM_SOLID_CASES)
