@@ -13,6 +13,13 @@ class BaseEffect(ABC):
     def __init__(self):
         # no shared state at the base level
         pass 
+
+    def prepare(self, clip_duration: float, **kwargs) -> None:
+        """
+        Called once before a render pass begins, giving the effect any clip-level context
+        it needs. Override in subclasses that don't need this - default is a no-op.
+        """
+        pass
     
     # main API: shared apply method (entirely abstract)
     @abstractmethod

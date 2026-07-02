@@ -14,7 +14,7 @@ from reelpy.clip.base import BaseClip
 from reelpy.io.reader import VideoReader
 from reelpy.io.writer import VideoWriter
 from reelpy.config import config
-from reelpy.effects.fades import FadeOutEffect
+from reelpy.preview.player import PreviewPlayer
 
 class Clip(BaseClip):
     def __init__(self, path: str, audio_source: str | None = None, mute: bool = False):
@@ -45,6 +45,8 @@ class Clip(BaseClip):
     
     def frames(self) -> Iterator[tuple[np.ndarray, float]]:
         eff_dur = self.effective_duration()
+        for effect in self.effects:
+            effect.prepare(clip_duration=eff_dur) # no-op for most, meaningful for FadeOut bcuz it needs to consume the same clip_duration throughout read (SET ONCE OUTSIDE PER-FRAME LOOP)
         with VideoReader(self.path) as reader:
             # iterate thru frames from start to end
             for (arr, t) in reader.frames(start=self.start, end=self.end):
@@ -54,14 +56,11 @@ class Clip(BaseClip):
                     pass
                 # pass frames thru effect pipe
                 for effect in self.effects:
-                    if isinstance(effect, FadeOutEffect):
-                        effect.clip_duration = eff_dur
                     arr = effect.apply_frame(arr, t)
                 yield (arr, t)
 
     def preview(self) -> None:
-        # TODO: implement PreviewPlayer
-        pass
+        PreviewPlayer(self).run()
 
     def export(self, path: str, bitrate: int = 4_000_000, audio_mode: str | None = None) -> None:
         audio_mode = audio_mode or config.audio_mode # fall back to global config if mode not specifid in arg
@@ -99,4 +98,31 @@ class Clip(BaseClip):
             "layer_count": len(self.layers),
             "effect_count": len(self.effects)
         }
+    
+    def seek_frames(self, t: float) -> Iterator[tuple[np.ndarray, float]]:
+        # (1) determine the true editorial end of this clip
+        end = self.end if self.end is not None else self.duration
+
+        # (2) clamp t into valid range within the clip's editorial bounds
+        # never seek before the clip's own start, never seek past the end
+        t = max(self.start, min(t, end - 0.01))
+
+        # (3) prepare effects using the ORIGINAL effective_duration — this never
+        # changes based on seek position, so FadeOut timing is always correct
+        # regardless of where we scrub to
+        eff_dur = self.effective_duration()
+        for effect in self.effects:
+            effect.prepare(clip_duration=eff_dur)
+
+        # (4) open reader, seek directly to t (jumps to nearest keyframe at or before t)
+        with VideoReader(self.path) as reader:
+            # reader.frames() yields relative timestamps (t_abs - start), starting at 0.0
+            # adding t back converts them to absolute timestamps in the original timeline
+            for arr, t_rel in reader.frames(start=t, end=end):
+                t_abs = t + t_rel  # convert relative back to absolute
+                for layer in self.layers:
+                    arr = layer.render(arr, t_abs)
+                for effect in self.effects:
+                    arr = effect.apply_frame(arr, t_abs)
+                yield (arr, t_abs)
 

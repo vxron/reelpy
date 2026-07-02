@@ -42,6 +42,9 @@ class FadeOutEffect(BaseEffect):
          self.duration = duration
          self.clip_duration = clip_duration # injected by export() before rendering
 
+    def prepare(self, clip_duration: float, **kwargs) -> None:
+        self.clip_duration = clip_duration
+
     def apply_frame(self, frame: np.ndarray, t: float) -> np.ndarray:
         t_fade_start = self.clip_duration - self.duration
         # early stop if fade is not yet happening or already complete, past last frame

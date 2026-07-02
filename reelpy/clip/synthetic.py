@@ -14,7 +14,7 @@ import numpy as np
 from reelpy.clip.base import BaseClip
 from reelpy.io.writer import VideoWriter
 from reelpy.config import config
-from reelpy.effects.fades import FadeOutEffect
+from reelpy.preview.player import PreviewPlayer
 
 class SyntheticClip(BaseClip):
     # Default is a 1080p 10s video at 30fps with black background
@@ -73,6 +73,8 @@ class SyntheticClip(BaseClip):
         # Generates frames from scratch rather than decoding them from source
         effective_end = self.end if self.end is not None else self.duration
         eff_dur = self.effective_duration()
+        for effect in self.effects:
+            effect.prepare(clip_duration=eff_dur)
         # total frames needed
         total_frames = round((effective_end - self.start) * self.fps)
         for i in range(total_frames):
@@ -85,16 +87,11 @@ class SyntheticClip(BaseClip):
             # for layer in self.layers:
              #     canvas = layer.render(canvas, t)
             for effect in self.effects:
-                # inject clip duration into any fadeout effects
-                if isinstance(effect, FadeOutEffect):
-                    effect.clip_duration = eff_dur
-                
                 canvas = effect.apply_frame(canvas, t)
             yield (canvas, t)
 
     def preview(self) -> None:
-        # TODO: implement PreviewPlayer
-        pass
+        PreviewPlayer(self).run()
     
     def export(self, out_path: str, bitrate: int = 4_000_000, audio_mode: str | None = None) -> None:
         audio_mode = audio_mode or config.audio_mode
@@ -106,7 +103,8 @@ class SyntheticClip(BaseClip):
         with VideoWriter(
             out_path, fps=self.fps, width=out_w, height=out_h, bitrate=bitrate, audio_source=resolved_audio
         ) as writer:
-            for (arr, t) in self.frames(): # internally generated frames w pre-built layers/effects
+            writer.write_frame(first_arr)       # write the first frame we already pulled
+            for (arr, t) in frames_gen:         # continue w internally generated frames w pre-built layers/effects
                 writer.write_frame(arr)
             # add audio if there is some
             if resolved_audio is not None:
@@ -127,4 +125,42 @@ class SyntheticClip(BaseClip):
             "layer_count": len(self.layers),
             "effect_count": len(self.effects),
     }
+
+    # ALTERNATIVE TO FRAMES() FOR SCRUBBING (NON EXPORT)
+    def seek_frames(self, t: float) -> Iterator[tuple[np.ndarray, float]]:
+        # (1) determine the true editorial end of this clip
+        end = self.end if self.end is not None else self.duration
+
+        # (2) clamp t into valid range within the clip's editorial bounds
+        t = max(self.start, min(t, end - 0.01))
+
+        # (3) prepare effects using the ORIGINAL effective_duration — same as frames(),
+        # never derived from seek position
+        eff_dur = self.effective_duration()
+        for effect in self.effects:
+            effect.prepare(clip_duration=eff_dur)
+
+        # (4) compute how many frames exist from t to the editorial end
+        total_frames = round((end - t) * self.fps)
+
+        for i in range(total_frames):
+            # ABSOLUTE timestamp — t_abs is the true position in the original timeline,
+            # never reset to 0 the way frames() does with its relative timestamps
+            t_abs = t + i / self.fps
+
+            # build a fresh canvas for this frame (same as frames())
+            canvas = np.full((self.height, self.width, 3), self.background, dtype=np.uint8)
+
+            # apply layer compositing stack using absolute t_abs
+            for layer in self.layers:
+                canvas = layer.render(canvas, t_abs)
+
+            # apply effect chain using absolute t_abs
+            for effect in self.effects:
+                canvas = effect.apply_frame(canvas, t_abs)
+
+            # yield ABSOLUTE timestamp — PreviewPlayer.self.t stays in sync with
+            # the original timeline without any offset arithmetic
+            yield (canvas, t_abs)
+
             
