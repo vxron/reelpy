@@ -8,6 +8,7 @@ from collections.abc import Callable
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from reelpy.layers.base import BaseLayer
+import importlib.resources
 
 # module-level cache for .ttf files from disk that all textlayers can use
 _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {} # keyed by (font_path, font_size)
@@ -46,6 +47,8 @@ class TextLayer(BaseLayer):
         font_path = overrides.get("font_path", self.font_path)
         font_size = overrides.get("font_size", self.font_size)
         anchor = overrides.get("anchor", self.anchor)
+        max_width = overrides.get("max_width", self.max_width)
+        line_spacing = overrides.get("line_spacing", self.line_spacing)
         name = overrides.get("name", self.name)
         opacity = overrides.get("opacity", self.opacity)
         effects=overrides.get("effects", list(self.effects))
@@ -53,7 +56,7 @@ class TextLayer(BaseLayer):
         t_start=overrides.get("t_start", self.t_start)
         t_end=overrides.get("t_end", self.t_end)
         return TextLayer(
-            text, position, font_path, font_size, color, anchor,
+            text, position, font_path, font_size, color, anchor, max_width, line_spacing,
             name=name, opacity=opacity, effects=effects,
             blend_mode=blend_mode, t_start=t_start, t_end=t_end,
         )
@@ -64,10 +67,12 @@ class TextLayer(BaseLayer):
             return text # no auto-wrap
         
         words = text.split()
-        candidate_line = ""
+        if not words:
+            return text
+        candidate_line = words[0] # start without leading space
         wrapped_text = ""
         
-        for word in words:
+        for word in words[1:]: # skip first word, alr consumd abov
             # measur current line's width if adding word
             curr = font.getlength(candidate_line + " " + word)
             if curr >= self.max_width:
@@ -94,8 +99,14 @@ class TextLayer(BaseLayer):
         position = (int(position[0]), int(position[1]))
         # (2) look up or load the font
         if self.font_path is None:
-            # default
-            font = ImageFont.load_default()
+            # use bundled default font — respects font_size
+            default_font_path = str(
+                importlib.resources.files("reelpy.assets.fonts") / "DejaVuSans.ttf"
+            )
+            font = _font_cache.get(("__default__", font_size), None)
+            if font is None: # first load
+                font = ImageFont.truetype(default_font_path, font_size)
+                _font_cache[("__default__", font_size)] = font
         else:
             font = _font_cache.get((self.font_path, font_size), None)
             if font is None:

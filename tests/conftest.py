@@ -6,13 +6,16 @@ import pytest
 import random
 import math
 import numpy as np
+from PIL import Image
 from reelpy.config import config
 from reelpy.clip.synthetic import SyntheticClip
 from reelpy.clip.video import Clip
 from reelpy.effects.base import BaseEffect
 from reelpy.effects.fades import FadeInEffect, FadeOutEffect
 from reelpy.layers.shapes import SolidLayer, ShapeLayer
+from reelpy.layers.media import ImageLayer
 from reelpy.layers.text import TextLayer
+
 
 # ── CLI Arg Parsing ────────────────────────────────────────────────────────
 def pytest_addoption(parser):
@@ -75,7 +78,7 @@ def reset_config():
     config.default_fps = 30.0
 
 
-# ── Ready-To-Go Fixtures ────────────────────────────────────────────────────────
+# ── Ready-To-Go Fixtures & Primitives ────────────────────────────────────────────────────────
 
 SAMPLE_3S_320x240_30FPS = "tests/fixtures/Sample_320x240_30fps.mp4"
 SAMPLE_NOISE = "tests/fixtures/Sample_Noise.mp4"
@@ -116,7 +119,115 @@ FONT_FIXTURES = [
     "tests/fixtures/fonts/LiberationSans-Regular.ttf",
 ]
 
-# Fixture for testing effects on individual frames 
+# FIXTURE IMAGES
+def make_image_png_transparent(tmp_path, seed=0):
+    """
+    Generates a PNG with a colored rectangle on a transparent background.
+    Returns (file_path, params_dict) where params_dict contains rect position & color & size.
+    """
+    rng = random.Random(seed)
+    img_w, img_h = 100, 100 # small-ish for speed
+    # pick a random rect color (avoid near-black/white for reliable detection)
+    rect_color = (rng.randint(50, 200), rng.randint(50, 200), rng.randint(50, 200))
+    # pick rect bounds
+    rect_x = rng.randint(10, 30)
+    rect_y = rng.randint(10, 30)
+    rect_w = rng.randint(20, 40)
+    rect_h = rng.randint(20, 40)
+    
+    # build RGBA array - starts transparent
+    arr = np.zeros((img_h, img_w, 4), dtype=np.uint8)
+    # fill rectangle with solid color
+    arr[rect_y:rect_y+rect_h, rect_x:rect_x+rect_w, :3] = rect_color
+    arr[rect_y:rect_y+rect_h, rect_x:rect_x+rect_w,  3] = 255 # full opcity
+    
+    # save as PNG 
+    path = str(tmp_path / f"test_transparent_{seed}.png")
+    Image.fromarray(arr, mode="RGBA").save(path, format="PNG")
+    
+    params_dict = {
+        "image_type":     "png_transparent",
+        "rect_color":     rect_color,
+        "rect_x":         rect_x,
+        "rect_y":         rect_y,
+        "rect_w":         rect_w,
+        "rect_h":         rect_h,
+        "size":           (100,100)
+    }
+    return path, params_dict
+
+
+def make_image_png_opaque(tmp_path, seed=0):
+    """
+    Generates a fully opaque PNG with a checkerboard pattern - Two alternating colors in 20x20 blocks.
+    Returns (file_path, params_dict).
+    """
+    rng = random.Random(seed)
+    img_w, img_h = 100, 100
+    block_size = 20
+    
+    # pick two visually distinct colors
+    color_a = (rng.randint(150, 255), rng.randint(0,  80),  rng.randint(0,  80))   # reddish
+    color_b = (rng.randint(0,  80),  rng.randint(150, 255), rng.randint(0,  80))   # greenish
+    
+    # build RGB array & fill in checkerboard blocks
+    arr = np.zeros((img_h, img_w, 3), dtype=np.uint8)
+    for row in range(img_h // block_size):
+        for col in range(img_w // block_size):
+            color = color_a if (row + col) % 2 == 0 else color_b
+            arr[row*block_size:(row+1)*block_size,
+                col*block_size:(col+1)*block_size] = color
+    
+    # save as PNG 
+    path = str(tmp_path / f"test_opaque_{seed}.png")
+    Image.fromarray(arr, mode="RGB").save(path, format="PNG")
+    
+    params_dict = {
+        "image_type":     "png_opaque",
+        "color_a":        color_a,
+        "color_b":        color_b,
+        "block_size":     block_size,
+        "size":           (100,100)
+    }
+    return path, params_dict
+
+
+def make_image_jpg(tmp_path, seed=0):
+    """
+    Generates a JPG checkerboard with same pattern as make_test_png_opaque
+    but saved as JPG (lossy). JPG has no alpha channel. 
+    Uses large blocks (40x40) so block centers are far from compression
+    artifacts at block edges since JPEG compresses in 8x8 macroblocks, so
+    checking the center of a 40x40 block avoids boundary ringing artifacts.
+    """
+    rng = random.Random(seed)
+    img_w, img_h = 100, 100
+    block_size = 40  # larger than PNG checkerboard
+    color_a = (rng.randint(150, 220), rng.randint(0,  60),  rng.randint(0,  60))   # reddish
+    color_b = (rng.randint(0,  60),  rng.randint(150, 220), rng.randint(0,  60))   # greenish
+    
+    arr = np.zeros((img_h, img_w, 3), dtype=np.uint8)
+    for row in range(img_h // block_size + 1):  # +1 to handle partial blocks at boundary
+        for col in range(img_w // block_size + 1):
+            color = color_a if (row + col) % 2 == 0 else color_b
+            r0, r1 = row*block_size, min((row+1)*block_size, img_h)
+            c0, c1 = col*block_size, min((col+1)*block_size, img_w)
+            arr[r0:r1, c0:c1] = color
+    
+    # quality=95 keeps drift well within atol=15 for block centers
+    path = str(tmp_path / f"test_checkerboard_{seed}.jpg")
+    Image.fromarray(arr, mode="RGB").save(path, format="JPEG", quality=95)
+    params_dict = {
+        "image_type":     "jpg",
+        "size":           (100,100), 
+        "color_a":        color_a,
+        "color_b":        color_b,
+        "block_size":     block_size,
+    }
+    return path, params_dict
+
+
+# FIXTURE FRAMES
 colored_rgb = np.zeros((240, 320, 3), dtype=np.uint8)
 colored_rgb[:,:,0] = 200 # R channel
 colored_rgb[:,:,1] = 100 # G
@@ -151,7 +262,7 @@ BLANK_CANVASES = {
     "blank_rgba_medium": np.zeros((240, 320, 4), dtype=np.uint8),
 }
 
-# ── Fixture Factories ────────────────────────────────────────────────────────
+# ── Random Generators of Fixtures ────────────────────────────────────────────────────────
     
 def make_synthetic_from_fixture(width, height, fps, duration, background=(0,0,0), audio_source=None, start=None, end=None, **kwargs):
     """Build a SyntheticClip from a SYNTHETIC_FIXTURES entry."""
@@ -281,6 +392,8 @@ def make_random_text_layer(seed, width, height, **overrides):
         if overrides.get("max_width") is not None:
             # keep font_size reasonable relative to max_width so it's not just one word per line
             font_size = min(font_size, overrides["max_width"] // 4)
+    # floor at 30px for test reliability - smaller fonts have too few solid-color interior pixels to survive H.264 encode/decode round-trip detection.
+    font_size = max(font_size, 25)
 
     # margin computed deterministically: how much space could this text occupy,
     # regardless of which anchor is used (anchor could place text in any direction
@@ -305,6 +418,19 @@ def make_random_text_layer(seed, width, height, **overrides):
     )
     params_dict = vars(text_layer)
     return text_layer, params_dict
+
+
+def make_random_image_layer(seed, image_path, image_params, canvas_width, canvas_height) -> tuple[ImageLayer, dict]:
+    rng = random.Random(seed)
+    size = image_params.get("size", (100,100))
+    x = rng.randint(0, canvas_width - size[0])
+    y = rng.randint(0, canvas_height - size[1])
+    layer = ImageLayer(image_path=image_path, position=(x,y), size=None)
+    layer_params = {}
+    layer_params["position"] = (x,y)
+    return layer, layer_params
+
+
 
 # ── Test configs ────────────────────────────────────────────────────────
 

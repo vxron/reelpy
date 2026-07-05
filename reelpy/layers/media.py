@@ -79,6 +79,6 @@ class ImageLayer(BaseLayer):
         img_arr = np.array(img_cropped)
         canvas[dst_y0:dst_y1, dst_x0:dst_x1, :3] = img_arr[:,:,:3] # RGB
         canvas[dst_y0:dst_y1, dst_x0:dst_x1, 3] = img_arr[:,:,3] # alpha (preserves PNG transparency)
-
+        return canvas
 
 

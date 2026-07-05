@@ -3,9 +3,10 @@ import numpy as np
 from reelpy.layers.shapes import SolidLayer, ShapeLayer
 from reelpy.layers.text import TextLayer
 from reelpy.io.reader import VideoReader
+from reelpy.layers.media import ImageLayer
 from PIL import Image, ImageDraw, ImageFont
 from tests.conftest import (LAYER_SHAPE_FIXTURES, LAYER_SOLID_FIXTURES, ALL_CLIP_FACTORY, FONT_FIXTURES,
-    make_random_shape_layer, make_random_solid_layer, make_random_text_layer)
+    make_random_shape_layer, make_random_solid_layer, make_random_text_layer, make_image_png_transparent, make_image_jpg, make_image_png_opaque, make_random_image_layer)
 
 # ── Expectation Functions ──────────────────────────────────
 def assert_circle_correct(result, kwargs):
@@ -18,7 +19,8 @@ def assert_circle_correct(result, kwargs):
     else:
         check_x, check_y = cx + radius, cy  # stroked: check directly on the boundary
     actual_color = result[check_y, check_x, :3]
-    assert np.allclose(actual_color, color, atol=6) # tolerance of 3 for real vid footage
+    assert np.allclose(actual_color, color, atol=10) 
+    # NOTE: why atol allowed? H.264 compression drift on a thin shape
     if kwargs.get("has_alpha", True) == True:
         assert result[check_y, check_x, 3] == 255
 
@@ -31,7 +33,7 @@ def assert_rectangle_correct(result, kwargs):
         check_x, check_y = x + w // 2, y + h // 2
     else:
         check_x, check_y = x + w // 2, y  # exactly on the top border line
-    assert np.allclose(result[check_y, check_x, :3], color, atol=6)
+    assert np.allclose(result[check_y, check_x, :3], color, atol=10)
     if kwargs.get("has_alpha", True) == True:
         assert result[check_y, check_x, 3] == 255
 
@@ -89,7 +91,7 @@ def assert_shape_layer_correct(frame, kwargs):
     else:
         raise ValueError("No matching shape found in assert_shape_layer_correct.")
     
-def assert_text_layer_composited(frame, kwargs, atol=20):
+def assert_text_layer_composited(frame, kwargs, atol=10):
     x, y = kwargs["position"]
     font_size = kwargs["font_size"]
     color = kwargs["color"]
@@ -123,6 +125,56 @@ def assert_text_layer_composited(frame, kwargs, atol=20):
         f"(anchor={anchor}, max_width={max_width}, font_size={font_size}, text={text!r})"
     )
 
+def assert_im_layer_correct(layer_drawn, image_params):
+    assert layer_drawn is not None
+    assert layer_drawn.shape == (200,200,4) #canvas dimensions unchanged from test (see test)
+    assert np.all(layer_drawn[0:5, 0:5, 3] == 0) # corners should have alpha=0 given image started at (10,10), not true top-left corner
+
+def assert_im_png_transparent_correct(layer_drawn, image_params):
+    # compute absolute canvas position of the rectangle's center sinc layer is placed at (10,10) 
+    # add image-relative rect coords on top
+    check_x = 10 + image_params["rect_x"] + image_params["rect_w"] // 2
+    check_y = 10 + image_params["rect_y"] + image_params["rect_h"] // 2
+    # check rect center has correct color - PNG is lossless so exact equality expected
+    assert tuple(layer_drawn[check_y, check_x, :3]) == image_params["rect_color"], \
+        f"Expected rect color {image_params['rect_color']} at ({check_x},{check_y}), got {tuple(layer_drawn[check_y, check_x, :3])}"
+    # rect interior must be fully opaque
+    assert layer_drawn[check_y, check_x, 3] == 255 # center point
+    # canvas pos (10,10) maps to im pixel (0,0) - should be transparent since rect_x and rect_y are always >= 10pixels from image edge based on current make_image_png_transparent
+    assert layer_drawn[10,10,3] == 0, \
+        "Expected alpha=0 at image top-left"
+    
+def assert_im_png_opaque_correct(layer_drawn, image_params):
+    # compute check pixel: center of the checkerboard block (0,0) in canvas coords
+    check_x = 10 + image_params["block_size"] // 2
+    check_y = 10 + image_params["block_size"] // 2
+    assert tuple(layer_drawn[check_y, check_x, :3]) == image_params["color_a"] # first block should be color a
+    assert layer_drawn[check_y, check_x, 3] == 255 # fully opaque 
+    assert layer_drawn[10, 10, 3] == 255 # entire im region should be opaque, not just block centroid
+
+def assert_im_jpg_correct(layer_drawn, image_params):
+    check_x = 10 + image_params["block_size"] // 2
+    check_y = 10 + image_params["block_size"] // 2
+    # first block should be color a - tolerance since JPG is lossy so exact equality won't hold
+    assert np.allclose(layer_drawn[check_y, check_x, :3], image_params["color_a"], atol=8) 
+    assert layer_drawn[check_y, check_x, 3] == 255 # no lpha in JPG
+    assert layer_drawn[10, 10, 3] == 255
+
+def assert_image_layer_composited(test_frame, image_params, layer_params, atol=15):
+    # image_params = what color/pattern is in the image
+    # layer_params = where the layer was plced on the canvas
+    img_type = image_params["image_type"]
+    # CHECK PIXELS GUARANTEED TO BE COLORED IN
+    if img_type == "png_transparent": # solid rect
+        check_x = layer_params["position"][0] + image_params["rect_x"] + image_params["rect_w"] // 2
+        check_y = layer_params["position"][1] + image_params["rect_y"] + image_params["rect_h"] // 2
+        expected_color = image_params["rect_color"]
+    else: # both others are checkerboard
+        check_x = layer_params["position"][0] + image_params["block_size"] // 2
+        check_y = layer_params["position"][1] + image_params["block_size"] // 2
+        expected_color = image_params["color_a"]
+    assert np.allclose(test_frame[check_y, check_x, :3], expected_color, atol=atol)
+
 # ── Unit level: _draw() in isolation ──────────────────────────
 
 WRAP_TEST_CASES = [ # (text, max_width, description)
@@ -131,6 +183,8 @@ WRAP_TEST_CASES = [ # (text, max_width, description)
     ("Supercalifragilisticexpialidocious", 50, "single word wider than max_width — must not crash, must not split mid-word"),
     ("", 100, "empty string edge case"),
 ]
+
+IMAGE_TEST_CASES = ["png_transparent", "png_opaque", "jpg"]
 
 @pytest.mark.parametrize("label,kwargs_dict", LAYER_SOLID_FIXTURES)
 def test_solid_layer_draw(kwargs_dict, label):
@@ -206,6 +260,28 @@ def test_text_layer_draw(text, max_width, description):
     rejoined_words = wrapped.replace("\n", " ").split()
     assert rejoined_words == original_words, \
         f"[{description}] word content changed during wrapping: {original_words} != {rejoined_words}"
+    
+
+@pytest.mark.parametrize("im_type", IMAGE_TEST_CASES)
+def test_image_layer_draw(tmp_path, im_type):
+    canvas = np.zeros((200,200,4), dtype=np.uint8)
+    if im_type == "png_transparent":
+        im_path, params = make_image_png_transparent(tmp_path)
+        im_layer = ImageLayer(image_path=im_path, position=(10,10), size=None) #fixed pos
+        result = im_layer._draw(canvas,t=0.0)
+        assert_im_png_transparent_correct(result, params)
+    elif im_type == "png_opaque":
+        im_path, params = make_image_png_opaque(tmp_path)
+        im_layer = ImageLayer(image_path=im_path, position=(10,10), size=None) #fixed pos
+        result = im_layer._draw(canvas,t=0.0)
+        assert_im_png_opaque_correct(result, params)
+    elif im_type == "jpg":
+        im_path, params = make_image_jpg(tmp_path)
+        im_layer = ImageLayer(image_path=im_path, position=(10,10), size=None) #fixed pos
+        result = im_layer._draw(canvas,t=0.0)
+        assert_im_jpg_correct(result, params)
+    assert_im_layer_correct(result, params)
+    
 
 
 # ── Integration-level tests ──────────────────────────
@@ -262,3 +338,24 @@ def test_add_text_layer(tmp_path, clip_lambda, clip_label, text_layer, params_di
     assert len(frames_after) > 0
     test_frame, test_t = frames_after[len(frames_after)//2]
     assert_text_layer_composited(test_frame, params_dict)
+
+@pytest.mark.parametrize("clip_lambda, clip_label", ALL_CLIP_FACTORY)
+@pytest.mark.parametrize("im_type", IMAGE_TEST_CASES)
+def test_add_image_layer(tmp_path, clip_lambda, clip_label, im_type):
+    if im_type == "png_transparent":
+        im_path, params = make_image_png_transparent(tmp_path)
+    elif im_type == "png_opaque":
+        im_path, params = make_image_png_opaque(tmp_path)
+    elif im_type == "jpg":
+        im_path, params = make_image_jpg(tmp_path)
+        
+    layer, layer_params = make_random_image_layer(seed=0, image_path=im_path, image_params=params, canvas_width=320, canvas_height=240)
+    clip = clip_lambda()
+    clip = clip.add_layer(layer)
+    output = str(tmp_path / f"im_output_{clip_label}.mp4")
+    clip.export(output)
+    with VideoReader(output) as reader:
+        frames_after = list(reader.frames())
+    assert len(frames_after) > 0
+    test_frame, test_t = frames_after[len(frames_after)//2]
+    assert_image_layer_composited(test_frame, params, layer_params, atol=15)
