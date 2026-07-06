@@ -13,7 +13,7 @@ from reelpy.clip.video import Clip
 from reelpy.effects.base import BaseEffect
 from reelpy.effects.fades import FadeInEffect, FadeOutEffect
 from reelpy.layers.shapes import SolidLayer, ShapeLayer
-from reelpy.layers.media import ImageLayer
+from reelpy.layers.media import ImageLayer, VideoLayer
 from reelpy.layers.text import TextLayer
 
 
@@ -428,6 +428,37 @@ def make_random_image_layer(seed, image_path, image_params, canvas_width, canvas
     layer = ImageLayer(image_path=image_path, position=(x,y), size=None)
     layer_params = {}
     layer_params["position"] = (x,y)
+    return layer, layer_params
+
+
+def make_random_video_layer(seed, video_params, canvas_width, canvas_height, video_path = None) -> tuple[ImageLayer, dict]:
+    rng = random.Random(seed)
+    layer_params = {}
+    
+    if video_path is None:
+        # random synthetic clip of reasonable size
+        bg_color = (rng.randint(50,200), rng.randint(50,200), rng.randint(50,200))
+        duration = float(rng.randint(1,4))
+        fps = 30.0
+        loop = rng.choice([True, False])
+        t_offset = rng.uniform(0.0, duration)
+        size = (rng.randint(160,320), rng.randint(120,240)) # fixed small size
+        x = rng.randint(0, canvas_width - size[0])
+        y = rng.randint(0, canvas_height - size[1])
+        source_clip = SyntheticClip(size[0], size[1], fps, duration, bg_color)
+        layer = VideoLayer(source_clip, (x,y), size, loop, t_offset)
+    
+    else:
+        size = video_params.get("size")
+    
+    
+    layer_params["position"] = (x,y)
+    layer_params["background"] = bg_color
+    layer_params["duration"] = duration
+    layer_params["fps"] = fps
+    layer_params["loop"] = loop
+    layer_params["size"] = size
+    layer_params["t_offset"] = t_offset
     return layer, layer_params
 
 

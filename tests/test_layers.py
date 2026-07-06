@@ -3,7 +3,8 @@ import numpy as np
 from reelpy.layers.shapes import SolidLayer, ShapeLayer
 from reelpy.layers.text import TextLayer
 from reelpy.io.reader import VideoReader
-from reelpy.layers.media import ImageLayer
+from reelpy.layers.media import ImageLayer, VideoLayer
+from reelpy.clip.synthetic import SyntheticClip
 from PIL import Image, ImageDraw, ImageFont
 from tests.conftest import (LAYER_SHAPE_FIXTURES, LAYER_SOLID_FIXTURES, ALL_CLIP_FACTORY, FONT_FIXTURES,
     make_random_shape_layer, make_random_solid_layer, make_random_text_layer, make_image_png_transparent, make_image_jpg, make_image_png_opaque, make_random_image_layer)
