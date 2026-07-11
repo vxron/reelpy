@@ -147,17 +147,17 @@ class SyntheticClip(BaseClip):
             # ABSOLUTE timestamp — t_abs is the true position in the original timeline,
             # never reset to 0 the way frames() does with its relative timestamps
             t_abs = t + i / self.fps
+            t_trim = t_abs - self.start # what layers/effects expect
 
             # build a fresh canvas for this frame (same as frames())
             canvas = np.full((self.height, self.width, 3), self.background, dtype=np.uint8)
 
-            # apply layer compositing stack using absolute t_abs
+            # apply layer compositing stack 
             for layer in self.layers:
-                canvas = layer.render(canvas, t_abs)
-
-            # apply effect chain using absolute t_abs
+                canvas = layer.render(canvas, t_trim)
+            # apply effect chain 
             for effect in self.effects:
-                canvas = effect.apply_frame(canvas, t_abs)
+                canvas = effect.apply_frame(canvas, t_trim)
 
             # yield ABSOLUTE timestamp — PreviewPlayer.self.t stays in sync with
             # the original timeline without any offset arithmetic

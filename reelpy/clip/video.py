@@ -118,11 +118,12 @@ class Clip(BaseClip):
         with VideoReader(self.path) as reader:
             # reader.frames() yields relative timestamps (t_abs - start), starting at 0.0
             # adding t back converts them to absolute timestamps in the original timeline
-            for arr, t_rel in reader.frames(start=t, end=end):
-                t_abs = t + t_rel  # convert relative back to absolute
+            for arr, t_rel_to_seek in reader.frames(start=t, end=end):
+                t_abs = t + t_rel_to_seek  # absolute position - what we YIELD for preview playing
+                t_trim = t_abs - self.start # trim-relative - what frames() computes, and effects expect
                 for layer in self.layers:
-                    arr = layer.render(arr, t_abs)
+                    arr = layer.render(arr, t_trim)
                 for effect in self.effects:
-                    arr = effect.apply_frame(arr, t_abs)
+                    arr = effect.apply_frame(arr, t_trim)
                 yield (arr, t_abs)
 

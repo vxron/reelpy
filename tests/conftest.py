@@ -143,6 +143,64 @@ VIDEO_CLIP_FACTORY = [ # builds series of Clip instances from make_video_from_fi
 
 ALL_CLIP_FACTORY = SYNTHETIC_CLIP_FACTORY + VIDEO_CLIP_FACTORY # elements are (clip: BaseClip, clip_ID: str)
 
+class SeekFramesRecorder:
+    """
+    Test utility that wraps a REAL clip's seek_frames() to record every call
+    (the exact t values requested) and count how many times the returned
+    generator's __next__/close() fire — without needing a parallel fake
+    BaseClip implementation. The real seek_frames() still runs and produces
+    real frames; this only observes it.
+    """
+    def __init__(self):
+        self.seek_calls: list[float] = []
+        self.close_count: int = 0
+        self.next_count: int = 0
+
+    def _wrap_generator(self, gen):
+        recorder = self
+        class _Spy:
+            def __iter__(self_spy):
+                return self_spy
+            def __next__(self_spy):
+                recorder.next_count += 1
+                return next(gen)
+            def close(self_spy):
+                recorder.close_count += 1
+                gen.close()
+        return _Spy()
+
+    def attach(self, clip, monkeypatch):
+        original = clip.seek_frames
+        def spied(t):
+            self.seek_calls.append(t)
+            return self._wrap_generator(original(t))
+        monkeypatch.setattr(clip, "seek_frames", spied)
+        return self
+
+
+@pytest.fixture
+def seek_spy(monkeypatch):
+    """
+    Usage: recorder = seek_spy(clip) — call this BEFORE constructing
+    PreviewPlayer(clip), so even the constructor's own initial _seek(0.0)
+    call gets recorded.
+    """
+    def _attach(clip):
+        return SeekFramesRecorder().attach(clip, monkeypatch)
+    return _attach
+
+
+def make_preview_clip(duration=3.0, fps=10.0, start=None, end=None, width=16, height=16):
+    """
+    Small/fast REAL SyntheticClip for PreviewPlayer tests. No file I/O, tiny
+    canvas — cheap to construct and scrub repeatedly, while still exercising
+    PreviewPlayer against a genuine BaseClip implementation.
+    """
+    clip = SyntheticClip(width, height, fps, duration, (0, 0, 0))
+    if start is not None or end is not None:
+        clip = clip.trim(start if start is not None else 0.0, end)
+    return clip
+
 # ── Test configs ────────────────────────────────────────────────────────
 
 INVALID_CLIP_CONFIGS = [

@@ -5,7 +5,7 @@ Description: Abstract base class for clip types (sequence of frames)
 Child Classes: Clip, SyntheticClip
 """
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import Self, Dict
 import numpy as np
 from reelpy.config import config
@@ -167,23 +167,20 @@ class BaseClip(ABC):
         return effective_duration
     
     @abstractmethod
-    def seek_frames(self, t: float) -> Iterator[tuple[np.ndarray, float]]:
+    def seek_frames(self, t: float) -> Generator[tuple[np.ndarray, float]]:
         """
         Yields frames starting from absolute time t within the clip's
         original editorial timeline, WITHOUT altering any clip properties
-        (start, end, effective_duration, effect timing stay unchanged).
-
         KEY DIFFERENCE from frames():
         - frames(): yields t values relative to self.start (always starts at 0.0)
         - seek_frames(): yields ABSOLUTE t values (e.g. seeking to t=1.5 yields
           frames with t=1.5, 1.533..., 1.566..., etc.)
-
         For PreviewPlayer/scrubbing use only. Never use for export.
         """
         pass
 
     @abstractmethod
-    def frames(self) -> Iterator[tuple[np.ndarray, float]]:
+    def frames(self) -> Generator[tuple[np.ndarray, float]]:
         pass
 
     @abstractmethod
