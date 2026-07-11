@@ -16,34 +16,35 @@ import os
 import cv2
 import numpy as np
 from reelpy.clip.base import BaseClip
+from reelpy.timing import AbsoluteTime
 
 
 class PreviewPlayer():
     def __init__(self, clip: BaseClip):
         self.clip: BaseClip = clip
-        self.t: float = 0.0                                                   # current playhead position in seconds
+        self.t: AbsoluteTime = AbsoluteTime(0.0)                              # current playhead position in seconds
         self.paused: bool = False
         self._ended: bool = False                                             # true when generator is exhausted: distinguishes 'hit the end' from 'user paused'
         self.scrub_step_s: float = self._compute_scrub_step()                 # seconds fwd/bwd per arrow-key press, 1% of the total clip duration, w/ minimum of 0.5s
         self._current_frame: np.ndarray | None = None                         # last decoded frame
-        self._frame_gen: Generator[tuple[np.ndarray, float], None, None] | None = None
-        self._seek(0.0)                                                       # live generator: init _frame_gen at t=0, gets recreated on scrubs
+        self._frame_gen: Generator[tuple[np.ndarray, AbsoluteTime], None, None] | None = None
+        self._seek(AbsoluteTime(0.0))                                                       # live generator: init _frame_gen at t=0, gets recreated on scrubs
 
-    def _bounds(self) -> tuple[float, float]:
+    def _bounds(self) -> tuple[AbsoluteTime, AbsoluteTime]:
         meta = self.clip.metadata()
         duration = meta["duration"]
-        start = meta.get("start") or 0.0
-        end = meta.get("end") or duration
+        start = meta.get("start") or AbsoluteTime(0.0)
+        end = meta.get("end") or AbsoluteTime(duration)
         return start, end
     
     def _compute_scrub_step(self) -> float:
         start, end = self._bounds()
         return max(0.5, (end - start) * 0.01) # 1% of EFFECTIVE CLIP DUR (trimmed)
 
-    def _seek(self, t: float) -> None:
+    def _seek(self, t: AbsoluteTime) -> None:
         start, end = self._bounds()
         safe_end = max(start, end - 0.01)  # guards against end-0.01 < start on trims shorter than 0.01s
-        self.t = max(start, min(t, safe_end))  # clamp here so self.t stays accurate
+        self.t = AbsoluteTime(max(start, min(t, safe_end)))  # clamp here so self.t stays accurate
         if self._frame_gen is not None:
             # force cleanup now to avoid having a bunch of gen objs open at once
             self._frame_gen.close()

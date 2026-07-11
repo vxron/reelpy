@@ -7,7 +7,7 @@ Use case: When the primary source should be a video file.
 """
 
 from __future__ import annotations
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import Self, Dict
 import numpy as np
 from reelpy.clip.base import BaseClip
@@ -15,6 +15,7 @@ from reelpy.io.reader import VideoReader
 from reelpy.io.writer import VideoWriter
 from reelpy.config import config
 from reelpy.preview.player import PreviewPlayer
+from reelpy.timing import AbsoluteTime, TrimTime, to_trim
 
 class Clip(BaseClip):
     def __init__(self, path: str, audio_source: str | None = None, mute: bool = False):
@@ -43,21 +44,21 @@ class Clip(BaseClip):
         result.audio_source = overrides.get("audio_source", self.audio_source)
         return result
     
-    def frames(self) -> Iterator[tuple[np.ndarray, float]]:
+    def frames(self) ->  Generator[tuple[np.ndarray, TrimTime], None, None]:
         eff_dur = self.effective_duration()
         for effect in self.effects:
             effect.prepare(clip_duration=eff_dur) # no-op for most, meaningful for FadeOut bcuz it needs to consume the same clip_duration throughout read (SET ONCE OUTSIDE PER-FRAME LOOP)
         with VideoReader(self.path) as reader:
             # iterate thru frames from start to end
             for (arr, t) in reader.frames(start=self.start, end=self.end):
+                t_trim = TrimTime(t)   # reader was seeked to self.start, so this IS already trim-relative
                 # apply layer compositing stack
                 for layer in self.layers:
-                    # TODO: layer.render(arr, t)
-                    pass
+                    arr = layer.render(arr, t_trim)
                 # pass frames thru effect pipe
                 for effect in self.effects:
-                    arr = effect.apply_frame(arr, t)
-                yield (arr, t)
+                    arr = effect.apply_frame(arr, t_trim)
+                yield (arr, t_trim)
 
     def preview(self) -> None:
         PreviewPlayer(self).run()
@@ -99,13 +100,13 @@ class Clip(BaseClip):
             "effect_count": len(self.effects)
         }
     
-    def seek_frames(self, t: float) -> Iterator[tuple[np.ndarray, float]]:
+    def seek_frames(self, t: AbsoluteTime) -> Generator[tuple[np.ndarray, AbsoluteTime], None, None]:
         # (1) determine the true editorial end of this clip
-        end = self.end if self.end is not None else self.duration
+        end = self.end if self.end is not None else AbsoluteTime(self.duration)
 
         # (2) clamp t into valid range within the clip's editorial bounds
         # never seek before the clip's own start, never seek past the end
-        t = max(self.start, min(t, end - 0.01))
+        t = AbsoluteTime(max(self.start, min(t, end - 0.01)))
 
         # (3) prepare effects using the ORIGINAL effective_duration — this never
         # changes based on seek position, so FadeOut timing is always correct
@@ -119,8 +120,8 @@ class Clip(BaseClip):
             # reader.frames() yields relative timestamps (t_abs - start), starting at 0.0
             # adding t back converts them to absolute timestamps in the original timeline
             for arr, t_rel_to_seek in reader.frames(start=t, end=end):
-                t_abs = t + t_rel_to_seek  # absolute position - what we YIELD for preview playing
-                t_trim = t_abs - self.start # trim-relative - what frames() computes, and effects expect
+                t_abs = AbsoluteTime(t + t_rel_to_seek)  # absolute position - what we YIELD for preview playing
+                t_trim = to_trim(t_abs, self.start) # trim-relative - what frames() computes, and effects expect
                 for layer in self.layers:
                     arr = layer.render(arr, t_trim)
                 for effect in self.effects:

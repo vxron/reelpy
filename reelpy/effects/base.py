@@ -8,6 +8,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import numpy as np
 import copy
+from reelpy.timing import TrimTime
 
 class BaseEffect(ABC):
     def __init__(self):
@@ -23,7 +24,7 @@ class BaseEffect(ABC):
     
     # main API: shared apply method (entirely abstract)
     @abstractmethod
-    def apply_frame(self, frame: np.ndarray, t: float) -> np.ndarray:
+    def apply_frame(self, frame: np.ndarray, t: TrimTime) -> np.ndarray:
         pass 
 
     # method returning a copy of the effect, needed for _copy on clips (for indep copies of its effects instead of shared refs) 

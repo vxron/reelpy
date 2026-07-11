@@ -8,13 +8,14 @@ Use case: When the primary source should not be a video file.
 """
 
 from __future__ import annotations
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import Dict
 import numpy as np
 from reelpy.clip.base import BaseClip
 from reelpy.io.writer import VideoWriter
 from reelpy.config import config
 from reelpy.preview.player import PreviewPlayer
+from reelpy.timing import AbsoluteTime, TrimTime, to_trim
 
 class SyntheticClip(BaseClip):
     # Default is a 1080p 10s video at 30fps with black background
@@ -69,7 +70,7 @@ class SyntheticClip(BaseClip):
         result.mute = overrides.get("mute", self.mute)
         return result
     
-    def frames(self) -> Iterator[tuple[np.ndarray, float]]:
+    def frames(self) -> Generator[tuple[np.ndarray, TrimTime], None, None]:
         # Generates frames from scratch rather than decoding them from source
         effective_end = self.end if self.end is not None else self.duration
         eff_dur = self.effective_duration()
@@ -81,7 +82,7 @@ class SyntheticClip(BaseClip):
             # create entirely new canvas for each frame so that layers & effects can draw diff content (e.g. shape moves) and/or transform differently on diff frames (e.g. fadeout 10% vs. 50%)
             canvas = np.full((self.height,self.width,3), self.background, dtype=np.uint8) # fill canvas w background color
             # compute timestamp rel to start
-            t = i/self.fps
+            t = TrimTime(i/self.fps)
             
             # TODO: apply layer stack & effect chain
             # for layer in self.layers:
@@ -127,12 +128,12 @@ class SyntheticClip(BaseClip):
     }
 
     # ALTERNATIVE TO FRAMES() FOR SCRUBBING (NON EXPORT)
-    def seek_frames(self, t: float) -> Iterator[tuple[np.ndarray, float]]:
+    def seek_frames(self, t: AbsoluteTime) -> Generator[tuple[np.ndarray, AbsoluteTime], None, None]:
         # (1) determine the true editorial end of this clip
-        end = self.end if self.end is not None else self.duration
+        end = self.end if self.end is not None else AbsoluteTime(self.duration)
 
         # (2) clamp t into valid range within the clip's editorial bounds
-        t = max(self.start, min(t, end - 0.01))
+        t = AbsoluteTime(max(self.start, min(t, end - 0.01)))
 
         # (3) prepare effects using the ORIGINAL effective_duration — same as frames(),
         # never derived from seek position
@@ -146,8 +147,8 @@ class SyntheticClip(BaseClip):
         for i in range(total_frames):
             # ABSOLUTE timestamp — t_abs is the true position in the original timeline,
             # never reset to 0 the way frames() does with its relative timestamps
-            t_abs = t + i / self.fps
-            t_trim = t_abs - self.start # what layers/effects expect
+            t_abs = AbsoluteTime(t + i / self.fps)
+            t_trim = to_trim(t_abs, self.start) # what layers/effects expect
 
             # build a fresh canvas for this frame (same as frames())
             canvas = np.full((self.height, self.width, 3), self.background, dtype=np.uint8)

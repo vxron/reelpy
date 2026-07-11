@@ -10,13 +10,14 @@ from typing import Self, Dict
 import numpy as np
 from reelpy.config import config
 from reelpy.effects.base import BaseEffect
+from reelpy.timing import AbsoluteTime, TrimTime
 
 # Abstract Base Class
 class BaseClip(ABC):
     # Shared by subclasses by calling super().__init__()
     def __init__(self):
-        self.start: float = 0.0
-        self.end: float | None = None
+        self.start: AbsoluteTime = AbsoluteTime(0.0)
+        self.end: AbsoluteTime | None = None
         self.layers: list = []
         self.effects: list[BaseEffect] = []
         # AUDIO
@@ -151,7 +152,7 @@ class BaseClip(ABC):
 
     # START OTHER METHODS
 
-    def trim(self, start: float, end: float | None) -> Self:
+    def trim(self, start: AbsoluteTime, end: AbsoluteTime | None) -> Self:
         if start < 0:
             raise ValueError(f"start must be >= 0, got {start}")
         if end is not None and end <= start:
@@ -167,7 +168,7 @@ class BaseClip(ABC):
         return effective_duration
     
     @abstractmethod
-    def seek_frames(self, t: float) -> Generator[tuple[np.ndarray, float]]:
+    def seek_frames(self, t: AbsoluteTime) -> Generator[tuple[np.ndarray, AbsoluteTime], None, None]:
         """
         Yields frames starting from absolute time t within the clip's
         original editorial timeline, WITHOUT altering any clip properties
@@ -180,7 +181,7 @@ class BaseClip(ABC):
         pass
 
     @abstractmethod
-    def frames(self) -> Generator[tuple[np.ndarray, float]]:
+    def frames(self) -> Generator[tuple[np.ndarray, TrimTime], None, None]:
         pass
 
     @abstractmethod

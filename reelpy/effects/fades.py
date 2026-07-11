@@ -5,6 +5,7 @@ Classes: FadeInEffect, FadeOutEffect
 
 import numpy as np
 from reelpy.effects.base import BaseEffect
+from reelpy.timing import TrimTime
 
 class FadeInEffect(BaseEffect):
     """
@@ -14,7 +15,7 @@ class FadeInEffect(BaseEffect):
     def __init__(self, duration: float):
          self.duration = duration
 
-    def apply_frame(self, frame: np.ndarray, t: float) -> np.ndarray:
+    def apply_frame(self, frame: np.ndarray, t: TrimTime) -> np.ndarray:
         # early stop if fade is already complete
         if t > self.duration:
             return frame
@@ -45,7 +46,7 @@ class FadeOutEffect(BaseEffect):
     def prepare(self, clip_duration: float, **kwargs) -> None:
         self.clip_duration = clip_duration
 
-    def apply_frame(self, frame: np.ndarray, t: float) -> np.ndarray:
+    def apply_frame(self, frame: np.ndarray, t: TrimTime) -> np.ndarray:
         t_fade_start = self.clip_duration - self.duration
         # early stop if fade is not yet happening or already complete, past last frame
         if t < t_fade_start or t > t_fade_start + self.duration:
