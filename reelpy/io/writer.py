@@ -63,7 +63,7 @@ class VideoWriter():
             else:
                 self._audio_stream = None
                 self._audio_source = None
-        except FFmpegError as e:
+        except FFmpegError:
             raise StreamNotFoundError(f"VideoWriter failed to source audio at {audio_source}")
 
     def write_frame(self, frame: np.ndarray) -> None:

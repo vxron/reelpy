@@ -7,12 +7,9 @@ import pytest
 import numpy as np
 import av
 from reelpy.io.reader import VideoReader
-from reelpy.io.writer import VideoWriter
-from reelpy.clip.base import BaseClip
 from reelpy.clip.synthetic import SyntheticClip
 from reelpy.clip.video import Clip
 from reelpy.exceptions import InvalidVideoError
-from reelpy.config import config
 from tests.conftest import (
     VIDEO_FIXTURES, SAMPLE_3S_320x240_30FPS, SAMPLE_VERT_AUDIO, AUDIO_FIXTURES,
     assert_frame_valid, assert_timestamps_valid, INVALID_CLIP_CONFIGS, SYNTHETIC_FIXTURES,
@@ -188,7 +185,7 @@ def test_synthetic_clip_init(width, height, fps, duration, background, audio_sou
 @pytest.mark.parametrize("width, height, fps, duration, background", INVALID_CLIP_CONFIGS)
 def test_synthetic_clip_invalid_inputs(width, height, fps, duration, background):
     with pytest.raises(ValueError):
-        syn = SyntheticClip(width, height, fps, duration, background)
+        SyntheticClip(width, height, fps, duration, background)
 
 @pytest.mark.parametrize("width, height, fps, duration, background, audio_source, start, end", SYNTHETIC_FIXTURES)
 def test_synthetic_clip_frames_properties(width, height, fps, duration, background, audio_source, start, end):

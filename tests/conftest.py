@@ -7,8 +7,6 @@ import numpy as np
 from reelpy.config import config
 from reelpy.clip.synthetic import SyntheticClip
 from reelpy.clip.video import Clip
-from reelpy.effects.base import BaseEffect
-from reelpy.effects.fades import FadeInEffect, FadeOutEffect
 
 
 # ── CLI Arg Parsing ────────────────────────────────────────────────────────

@@ -47,7 +47,7 @@ def assert_fadein_alpha_correct(inp, out, effect, t):
         raise ValueError("Mismatched channel configuration. Expected RGBA, got RGB.")
     alpha_factor = min(t / effect.duration, 1.0)
     assert np.array_equal(out[:,:,:3], inp[:,:,:3]), \
-            f"RGB channels should be completely untouched for RGBA fadein"
+            "RGB channels should be completely untouched for RGBA fadein"
     expected_alpha = (inp[:,:,3].astype(np.float32) * alpha_factor).astype(np.uint8) # what alpha channel should see for fade-in
     assert np.allclose(out[:,:,3], expected_alpha, atol=1)
 
@@ -93,7 +93,8 @@ def assert_fadeout_alpha_correct(inp, out, effect, t):
 def assert_first_darker_than_last(frames, frames_before=None, **kwargs):
     """FADEIN BEHAVIOR: First frame should be darker than last.
        frames is from reader.frames()"""
-    start_idx = 0; end_idx = -1
+    start_idx = 0
+    end_idx = -1
     # for useful test: need frames to not be already black 
     while frames[start_idx][0].mean() < 3.0: 
         if start_idx >= len(frames)-1:
@@ -110,7 +111,8 @@ def assert_first_darker_than_last(frames, frames_before=None, **kwargs):
     
 def assert_last_darker_than_first(frames, frames_before=None, **kwargs):
     """FADEOUT BEHAVIOR: Last frame should be darker than first."""
-    start_idx = 0; end_idx = -1
+    start_idx = 0
+    end_idx = -1
     # iterate until we get frames that arent nearly black
     while frames[start_idx][0].mean() < 3.0: # essentially black end frame 
         if start_idx >= len(frames)-1:
@@ -127,7 +129,8 @@ def assert_last_darker_than_first(frames, frames_before=None, **kwargs):
     
 def assert_middle_brighter_than_ends(frames, frames_before=None, **kwargs):
     """FADEIN AND FADEOUT CHAIN: Middle frame brighter than first & last."""
-    start_idx = 0; end_idx = -1
+    start_idx = 0
+    end_idx = -1
     mid_idx = len(frames)//2
     # skip frames that are already black or white since they are alr saturated, hard to compare before after transformation
     while frames[start_idx][0].mean() < 3.0 or frames[start_idx][0].mean() > 253.0:

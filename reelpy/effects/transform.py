@@ -7,7 +7,6 @@ Classes: ResizeEffect
 """
 
 import cv2
-import numpy as np
 from reelpy.effects.base import BaseEffect
 
 class ResizeEffect(BaseEffect):

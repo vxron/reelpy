@@ -8,7 +8,6 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from typing import Self, Dict
 import numpy as np
-from reelpy.config import config
 from reelpy.effects.base import BaseEffect
 
 # Abstract Base Class
