@@ -1,31 +1,45 @@
-# Use a docker container with Python 3.11 installed for sandboxing processes
-image: python:3.11-slim
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
-# Pipeline stages : only test here (no build/deploy needed)
-# start container -> install dependencies -> run tests -> done
 stages:
+  - lint
   - test
 
-# Environment variables available to jobs
 variables:
-# store pip install cache so we don't have to redownload deps every run
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
 
-# where job can find cache
-cache:
-  paths:
-    - .cache/pip/
+default:
+  image: python:3.12
+  before_script:
+    - apt-get update -y
+    - apt-get install -y libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 libgomp1 ffmpeg
+    - pip install --upgrade pip
+    - pip install -e .
+    - pip install pytest ruff
+  cache:
+    key:
+      files:
+        - pyproject.toml
+    paths:
+      - .cache/pip
 
-# commands run before every job
-before_script:
-  - pip install --upgrade pip
-  # install project dependencies
-  - pip install ".[dev]"
-
-# test job definition
-test:
-  stage: test # run in test stage
-  # run all tests in tests/
+lint:
+  stage: lint
   script:
-    - pytest tests/ -v --tb=short
-  allow_failure: false
+    - ruff check .
+
+test:clip:
+  stage: test
+  script:
+    - pytest tests/test_clip.py
+
+test:effects:
+  stage: test
+  script:
+    - pytest tests/test_effects.py
+
+test:io:
+  stage: test
+  script:
+    - pytest tests/test_io.py
