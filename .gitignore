@@ -21,6 +21,10 @@ htmlcov/
 # macOS
 .DS_Store
 
+# Docs (avoid agent-generated markdown creeping into commits)
+*.md
+!README.md
+
 # Media files
 *.mp4
 *.mp3
