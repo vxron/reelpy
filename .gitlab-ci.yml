@@ -48,7 +48,9 @@ test:other:
   stage: test
   script:
     - |
+      set +o pipefail
       COLLECTED=$(pytest tests/ --ignore=tests/test_clip.py --ignore=tests/test_effects.py --ignore=tests/test_io.py --collect-only -q | tail -1)
+      set -o pipefail
       if echo "$COLLECTED" | grep -qv "no tests collected"; then
         echo "=================================================================="
         echo "WARNING: test:other collected tests outside the named parallel jobs."
@@ -60,4 +62,12 @@ test:other:
         echo "Collected: $COLLECTED"
         echo "=================================================================="
       fi
-    - pytest tests/ --ignore=tests/test_clip.py --ignore=tests/test_effects.py --ignore=tests/test_io.py
+    - |
+      set +e
+      pytest tests/ --ignore=tests/test_clip.py --ignore=tests/test_effects.py --ignore=tests/test_io.py
+      status=$?
+      set -e
+      # exit code 5 = "no tests collected", expected until a non-dedicated test file exists
+      if [ "$status" -ne 0 ] && [ "$status" -ne 5 ]; then
+        exit "$status"
+      fi
