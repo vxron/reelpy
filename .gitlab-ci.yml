@@ -43,3 +43,21 @@ test:io:
   stage: test
   script:
     - pytest tests/test_io.py
+
+test:other:
+  stage: test
+  script:
+    - |
+      COLLECTED=$(pytest tests/ --ignore=tests/test_clip.py --ignore=tests/test_effects.py --ignore=tests/test_io.py --collect-only -q | tail -1)
+      if echo "$COLLECTED" | grep -qv "no tests collected"; then
+        echo "=================================================================="
+        echo "WARNING: test:other collected tests outside the named parallel jobs."
+        echo "This means a new test_*.py file was added that isn't split into"
+        echo "its own dedicated CI job (test:clip, test:effects, test:io)."
+        echo "Coverage is NOT lost — these tests are still running right now,"
+        echo "in this job, un-parallelized. But you should add a dedicated job"
+        echo "for the new file if you want it to run in parallel with the others."
+        echo "Collected: $COLLECTED"
+        echo "=================================================================="
+      fi
+    - pytest tests/ --ignore=tests/test_clip.py --ignore=tests/test_effects.py --ignore=tests/test_io.py
